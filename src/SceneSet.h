@@ -35,6 +35,7 @@
 #include <WPEFramework/com/com.h>
 #include <WPEFramework/core/core.h>
 #include "WPEFramework/interfaces/IAppManager.h"
+#include "WPEFramework/interfaces/IPreinstallManager.h"
 
 using namespace std;
 using namespace WPEFramework;
@@ -46,8 +47,11 @@ public:
 
     bool initialize();
     bool registerForAppEvents();
+    bool registerForPreinstallEvents();
     bool unRegisterForAppEvents();
+    bool unRegisterForPreinstallEvents();
     bool launchDefaultApp();
+    bool startPreinstall();
     void waitForTermSignal();
     static void handleTerminationSignal(int signal);
     void onTerminate();
@@ -59,8 +63,11 @@ private:
     volatile bool m_isActive;
     std::mutex m_lock;
     Exchange::IAppManager *appManager;
+    Exchange::IPreinstallManager *preinstallManager;
     std::shared_ptr<WPEFramework::Exchange::IAppManager::INotification> appManagerEventHandler;
+    std::shared_ptr<WPEFramework::Exchange::IPreinstallManager::INotification> preinstallManagerEventHandler;
     std::string appmgrCallsign;
+    std::string preinstallCallsign;
     const char *comrpcPath;
 
     class AppManagerEventHandler : public Exchange::IAppManager::INotification {
@@ -76,6 +83,16 @@ private:
         uint32_t Release() const override;
         void* QueryInterface(const uint32_t interfaceNumber) override;
     };
+
+    class PreinstallManagerEventHandler : public Exchange::IPreinstallManager::INotification {
+    public:
+        ~PreinstallManagerEventHandler();
+        void OnAppInstallationStatus(const string &jsonresponse) override;
+        uint32_t AddRef() const override;
+        uint32_t Release() const override;
+        void* QueryInterface(const uint32_t interfaceNumber) override;
+    };
+
 };
 
 #endif // SCENESET_H

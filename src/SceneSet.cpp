@@ -20,10 +20,11 @@
 #include "SceneSet.h"
 
 SceneSetApp::SceneSetApp()
-    : m_isActive(false), appManager(nullptr), appManagerEventHandler(nullptr), appmgrCallsign("org.rdk.AppManager"), comrpcPath("/tmp/communicator") {}
+    : m_isActive(false), appManager(nullptr), preinstallManager(nullptr), appManagerEventHandler(nullptr), preinstallManagerEventHandler(nullptr), appmgrCallsign("org.rdk.AppManager"), preinstallCallsign("org.rdk.PreinstallManager"), comrpcPath("/tmp/communicator") {}
 
 SceneSetApp::~SceneSetApp() {
     unRegisterForAppEvents();
+    unRegisterForPreinstallEvents();
 }
 
 bool SceneSetApp::initialize() {
@@ -31,12 +32,21 @@ bool SceneSetApp::initialize() {
     std::string envThunderAccess = (thunderAccess != nullptr) ? thunderAccess : comrpcPath;
 
     Core::SystemInfo::SetEnvironment(_T("THUNDER_ACCESS"), envThunderAccess.c_str());
-    Core::ProxyType<RPC::CommunicatorClient> client = Core::ProxyType<RPC::CommunicatorClient>::Create(
+    Core::ProxyType<RPC::CommunicatorClient> client1 = Core::ProxyType<RPC::CommunicatorClient>::Create(
+        Core::NodeId(envThunderAccess.c_str()));
+    Core::ProxyType<RPC::CommunicatorClient> client2 = Core::ProxyType<RPC::CommunicatorClient>::Create(
         Core::NodeId(envThunderAccess.c_str()));
 
-    if (client.IsValid()) {
+    if (client1.IsValid()) {
         cout << " Registered to Thunder" << endl;
-        appManager = client->Open<Exchange::IAppManager>(appmgrCallsign.c_str());
+	preinstallManager = client1->Open<Exchange::IPreinstallManager>(preinstallCallsign.c_str());
+	if (preinstallManager == nullptr) {
+            std::cerr << "Failed to open IPreinstallManager interface." << std::endl;
+            return false;
+        }
+    }
+    if (client2.IsValid()) {
+        appManager = client2->Open<Exchange::IAppManager>(appmgrCallsign.c_str());
         if (appManager == nullptr) {
             std::cerr << "Failed to open IAppManager interface." << std::endl;
             return false;
@@ -69,6 +79,17 @@ bool SceneSetApp::registerForAppEvents() {
     return false;
 }
 
+bool SceneSetApp::registerForPreinstallEvents() {
+    if (nullptr == preinstallManagerEventHandler) {
+        preinstallManagerEventHandler = std::make_shared<PreinstallManagerEventHandler>();
+    }
+    if (preinstallManager != nullptr) {
+        preinstallManager->Register(preinstallManagerEventHandler.get());
+        return true;
+    }
+    return false;
+}
+
 bool SceneSetApp::unRegisterForAppEvents() {
     cout << " Unregistering for App Events " << endl;
     if (nullptr != appManagerEventHandler && nullptr != appManager) {
@@ -82,6 +103,19 @@ bool SceneSetApp::unRegisterForAppEvents() {
     return false;
 }
 
+bool SceneSetApp::unRegisterForPreinstallEvents() {
+    cout << " Unregistering for Preinstall Events " << endl;
+    if (nullptr != preinstallManagerEventHandler && nullptr != preinstallManager) {
+        preinstallManager->Unregister(preinstallManagerEventHandler.get());
+        preinstallManagerEventHandler = nullptr;
+        cout << " Unregistered Preinstall Events " << endl;
+        return true;
+    } else {
+        cout << "preinstallManager or EventHandler is null, cannot unregister" << endl;
+    }
+    return false;
+}
+
 bool SceneSetApp::launchDefaultApp() {
     const char* envAppName = std::getenv("SCENESET_DEFAULT_APPNAME");
     std::string appName = envAppName ? envAppName : "";
@@ -91,6 +125,12 @@ bool SceneSetApp::launchDefaultApp() {
     }
     std::cout << "Launching default app: " << appName << std::endl;
     appManager->LaunchApp(appName, "", "");
+    return true;
+}
+
+bool SceneSetApp::startPreinstall() {
+    std::cout << "Starting preinstall" << std::endl;
+    preinstallManager->StartPreinstall(false);
     return true;
 }
 
@@ -114,6 +154,7 @@ void SceneSetApp::onTerminate() {
     std::unique_lock<std::mutex> ulock(m_lock);
     m_isActive = false;
     unRegisterForAppEvents();
+    unRegisterForPreinstallEvents();
     m_act_cv.notify_one();
 }
 
@@ -128,7 +169,9 @@ void SceneSetApp::run() {
                   "STATUS=ComRPC client is Successfully Initialized\n"
                   "MAINPID=%lu",
                (unsigned long)getpid());
+    registerForPreinstallEvents();
     registerForAppEvents();
+    startPreinstall();
     launchDefaultApp();
     waitForTermSignal();
 }
@@ -192,3 +235,26 @@ void* SceneSetApp::AppManagerEventHandler::QueryInterface(const uint32_t interfa
     }
     return nullptr;
 }
+
+// PreinstallManagerEventHandler implementations
+SceneSetApp::PreinstallManagerEventHandler::~PreinstallManagerEventHandler() {}
+
+void SceneSetApp::PreinstallManagerEventHandler::OnAppInstallationStatus(const string &jsonresponse) {
+    std::cout << "OnAppInstallationStatus: " << std::endl;
+}
+
+uint32_t SceneSetApp::PreinstallManagerEventHandler::AddRef() const {
+    return Core::ERROR_NONE;
+}
+
+uint32_t SceneSetApp::PreinstallManagerEventHandler::Release() const {
+    return Core::ERROR_NONE;
+}
+
+void* SceneSetApp::PreinstallManagerEventHandler::QueryInterface(const uint32_t interfaceNumber) {
+    if (interfaceNumber == Exchange::IPreinstallManager::INotification::ID) {
+        return static_cast<Exchange::IPreinstallManager::INotification*>(this);
+    }
+    return nullptr;
+}
+
