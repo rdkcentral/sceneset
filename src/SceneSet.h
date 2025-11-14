@@ -23,6 +23,7 @@
 #include <iostream>
 #include <memory>
 #include <thread>
+#include <atomic>
 #include <csignal>
 #include <condition_variable>
 #include <mutex>
@@ -58,10 +59,18 @@ private:
     std::condition_variable m_act_cv;
     volatile bool m_isActive;
     std::mutex m_lock;
-    Exchange::IAppManager *appManager;
-    std::shared_ptr<WPEFramework::Exchange::IAppManager::INotification> appManagerEventHandler;
-    std::string appmgrCallsign;
-    const char *comrpcPath;
+    Exchange::IAppManager *m_appManager;
+    std::shared_ptr<WPEFramework::Exchange::IAppManager::INotification> m_appManagerEventHandler;
+    std::string m_appmgrCallsign;
+    std::string m_defaultAppName;
+    const char *m_comrpcPath;
+
+    std::unique_ptr<std::thread> m_launchThread;
+    std::atomic<bool> m_stopLaunchThread;
+    std::mutex m_launchThreadMutex;
+
+    void stopCurrentLaunchThread();
+    void startLaunchThread();
 
     class AppManagerEventHandler : public Exchange::IAppManager::INotification {
     public:

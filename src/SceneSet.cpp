@@ -20,15 +20,19 @@
 #include "SceneSet.h"
 
 SceneSetApp::SceneSetApp()
-    : m_isActive(false), appManager(nullptr), appManagerEventHandler(nullptr), appmgrCallsign("org.rdk.AppManager"), comrpcPath("/tmp/communicator") {}
+    :  m_act_cv(), m_isActive(false), m_lock(), m_appManager(nullptr), m_appManagerEventHandler(nullptr), m_appmgrCallsign("org.rdk.AppManager"), m_defaultAppName(""), m_comrpcPath("/tmp/communicator"), m_launchThread(nullptr), m_stopLaunchThread(false), m_launchThreadMutex() {
+    const char* envAppName = std::getenv("SCENESET_DEFAULT_APPNAME");
+    m_defaultAppName = envAppName ? envAppName : "";
+}
 
 SceneSetApp::~SceneSetApp() {
+    stopCurrentLaunchThread();
     unRegisterForAppEvents();
 }
 
 bool SceneSetApp::initialize() {
     const char *thunderAccess = std::getenv("THUNDER_ACCESS");
-    std::string envThunderAccess = (thunderAccess != nullptr) ? thunderAccess : comrpcPath;
+    std::string envThunderAccess = (thunderAccess != nullptr) ? thunderAccess : m_comrpcPath;
 
     Core::SystemInfo::SetEnvironment(_T("THUNDER_ACCESS"), envThunderAccess.c_str());
     Core::ProxyType<RPC::CommunicatorClient> client = Core::ProxyType<RPC::CommunicatorClient>::Create(
@@ -36,8 +40,8 @@ bool SceneSetApp::initialize() {
 
     if (client.IsValid()) {
         cout << " Registered to Thunder" << endl;
-        appManager = client->Open<Exchange::IAppManager>(appmgrCallsign.c_str());
-        if (appManager == nullptr) {
+        m_appManager = client->Open<Exchange::IAppManager>(m_appmgrCallsign.c_str());
+        if (m_appManager == nullptr) {
             std::cerr << "Failed to open IAppManager interface." << std::endl;
             return false;
         }
@@ -59,11 +63,11 @@ bool SceneSetApp::initialize() {
 }
 
 bool SceneSetApp::registerForAppEvents() {
-    if (nullptr == appManagerEventHandler) {
-        appManagerEventHandler = std::make_shared<AppManagerEventHandler>();
+    if (nullptr == m_appManagerEventHandler) {
+        m_appManagerEventHandler = std::make_shared<AppManagerEventHandler>();
     }
-    if (appManager != nullptr) {
-        appManager->Register(appManagerEventHandler.get());
+    if (m_appManager != nullptr) {
+        m_appManager->Register(m_appManagerEventHandler.get());
         return true;
     }
     return false;
@@ -71,9 +75,9 @@ bool SceneSetApp::registerForAppEvents() {
 
 bool SceneSetApp::unRegisterForAppEvents() {
     cout << " Unregistering for App Events " << endl;
-    if (nullptr != appManagerEventHandler && nullptr != appManager) {
-        appManager->Unregister(appManagerEventHandler.get());
-        appManagerEventHandler = nullptr;
+    if (nullptr != m_appManagerEventHandler && nullptr != m_appManager) {
+        m_appManager->Unregister(m_appManagerEventHandler.get());
+        m_appManagerEventHandler = nullptr;
         cout << " Unregistered  App Events " << endl;
         return true;
     } else {
@@ -83,14 +87,12 @@ bool SceneSetApp::unRegisterForAppEvents() {
 }
 
 bool SceneSetApp::launchDefaultApp() {
-    const char* envAppName = std::getenv("SCENESET_DEFAULT_APPNAME");
-    std::string appName = envAppName ? envAppName : "";
-    if (appName.empty()) {
+    if (m_defaultAppName.empty()) {
         std::cout << "No app name specified in SCENESET_DEFAULT_APPNAME env variable." << std::endl;
         return false;
     }
-    std::cout << "Launching default app: " << appName << std::endl;
-    appManager->LaunchApp(appName, "", "");
+    std::cout << "Launching default app: " << m_defaultAppName << std::endl;
+    m_appManager->LaunchApp(m_defaultAppName, "", "");
     return true;
 }
 
@@ -129,7 +131,7 @@ void SceneSetApp::run() {
                   "MAINPID=%lu",
                (unsigned long)getpid());
     registerForAppEvents();
-    launchDefaultApp();
+    startLaunchThread();
     waitForTermSignal();
 }
 
@@ -145,9 +147,20 @@ void SceneSetApp::AppManagerEventHandler::OnAppUninstalled(const string &appId) 
 }
 
 void SceneSetApp::AppManagerEventHandler::OnAppLifecycleStateChanged(const string &appId, const string &appInstanceId, const Exchange::IAppManager::AppLifecycleState newState, const Exchange::IAppManager::AppLifecycleState oldState, const Exchange::IAppManager::AppErrorReason errorReason) {
-    std::cout << "App Lifecycle State Changed: " << appId
+    
+    SceneSetApp& instance = SceneSetApp::getInstance();
+    std::cout << "App Lifecycle State Changed for " << appId
               << " from " << getAppStateString(oldState) << " (" << static_cast<int>(oldState) << ")"
               << " to " << getAppStateString(newState) << " (" << static_cast<int>(newState) << ")" << std::endl;
+    if (!instance.m_defaultAppName.empty() && appId == instance.m_defaultAppName) {
+         
+        if (oldState == Exchange::IAppManager::AppLifecycleState::APP_STATE_TERMINATING &&
+            newState == Exchange::IAppManager::AppLifecycleState::APP_STATE_UNLOADED &&
+            errorReason == Exchange::IAppManager::AppErrorReason::APP_ERROR_ABORT) {
+            std::cout << "App " << appId << " terminated with ABORT error. Restarting reference app." << std::endl;
+            instance.startLaunchThread();
+        }
+    }
 }
 
 void SceneSetApp::AppManagerEventHandler::OnAppLaunchRequest(const string &appId, const string &intent, const string &source) {
@@ -157,7 +170,7 @@ void SceneSetApp::AppManagerEventHandler::OnAppLaunchRequest(const string &appId
 const char* SceneSetApp::AppManagerEventHandler::getAppStateString(const Exchange::IAppManager::AppLifecycleState state) {
     switch(state) {
         case Exchange::IAppManager::AppLifecycleState::APP_STATE_UNLOADED: return "UNLOADED";
-        case Exchange::IAppManager::AppLifecycleState::APP_STATE_LOADING: return "LOADING";  
+        case Exchange::IAppManager::AppLifecycleState::APP_STATE_LOADING: return "LOADING";
         case Exchange::IAppManager::AppLifecycleState::APP_STATE_INITIALIZING: return "INITIALIZING";
         case Exchange::IAppManager::AppLifecycleState::APP_STATE_PAUSED: return "PAUSED";
         case Exchange::IAppManager::AppLifecycleState::APP_STATE_RUNNING: return "RUNNING";
@@ -189,4 +202,47 @@ void* SceneSetApp::AppManagerEventHandler::QueryInterface(const uint32_t interfa
         return static_cast<Exchange::IAppManager::INotification*>(this);
     }
     return nullptr;
+}
+
+/**
+ * Stops the currently running launch thread, if any.
+ */
+void SceneSetApp::stopCurrentLaunchThread() {
+    std::lock_guard<std::mutex> lock(m_launchThreadMutex);
+    if (m_launchThread && m_launchThread->joinable()) {
+        std::cout << "Stopping current launch thread" << std::endl;
+        m_stopLaunchThread = true;
+        m_launchThread->join();
+        m_launchThread.reset();
+        std::cout << "Launch thread stopped successfully" << std::endl;
+    }
+    m_stopLaunchThread = false;
+}
+
+void SceneSetApp::startLaunchThread() {
+    std::lock_guard<std::mutex> lock(m_launchThreadMutex);
+
+    if (m_launchThread && m_launchThread->joinable()) {
+        m_stopLaunchThread = true;
+        m_launchThread->join();
+        m_launchThread.reset();
+    }
+
+    m_stopLaunchThread = false;
+    std::cout << "Launching default application" << std::endl;
+
+    m_launchThread = std::make_unique<std::thread>([this]() {
+        try {
+            if (!m_stopLaunchThread) {
+                std::cout << "Executing launchDefaultApp from thread" << std::endl;
+                if (!launchDefaultApp()) {
+                    std::cerr << "Failed to launch default app from thread" << std::endl;
+                }
+            } else {
+                std::cout << "Launch thread cancelled before execution" << std::endl;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Exception in launch thread: " << e.what() << std::endl;
+        }
+    });
 }
