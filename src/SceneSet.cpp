@@ -190,7 +190,14 @@ void SceneSetApp::AppManagerEventHandler::OnAppUninstalled(const string &appId) 
 void SceneSetApp::AppManagerEventHandler::OnAppLifecycleStateChanged(const string &appId, const string &appInstanceId, const Exchange::IAppManager::AppLifecycleState newState, const Exchange::IAppManager::AppLifecycleState oldState, const Exchange::IAppManager::AppErrorReason errorReason) {
     std::cout << "App Lifecycle State Changed: " << appId
               << " from " << getAppStateString(oldState) << " (" << static_cast<int>(oldState) << ")"
-              << " to " << getAppStateString(newState) << " (" << static_cast<int>(newState) << ")" << std::endl;
+              << " to " << getAppStateString(newState) << " (" << static_cast<int>(newState) << ")" << " with error " << getAppErrorString(errorReason)  << "("<< static_cast<int>(errorReason) << ")" << std::endl;
+    if (oldState == Exchange::IAppManager::AppLifecycleState::APP_STATE_TERMINATING &&
+        newState == Exchange::IAppManager::AppLifecycleState::APP_STATE_UNLOADED &&
+        errorReason == Exchange::IAppManager::AppErrorReason::APP_ERROR_ABORT) {
+
+        std::cout << "App " << appId << " terminated with ABORT error. Restarting reference app." << std::endl;
+        SceneSetApp::getInstance().launchDefaultApp();
+    }
 }
 
 void SceneSetApp::AppManagerEventHandler::OnAppLaunchRequest(const string &appId, const string &intent, const string &source) {
