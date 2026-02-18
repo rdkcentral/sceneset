@@ -382,13 +382,11 @@ bool SceneSetApp::copyFactoryAppsToPreinstall() {
 
     if (fileCount > 0) {
         std::cout << "Successfully copied " << fileCount << " factory app bundles to preinstall folder" << std::endl;
-        markFactoryAppsCopied();
-        return true;
     } else {
         std::cout << "No factory app bundles found to copy" << std::endl;
-        markFactoryAppsCopied();
-        return true;
     }
+    markFactoryAppsCopied();
+    return true;
 }
 
 void SceneSetApp::cleanupPreinstallFolder() {
@@ -615,60 +613,56 @@ SceneSetApp::PreinstallManagerEventHandler::~PreinstallManagerEventHandler() {}
 void SceneSetApp::PreinstallManagerEventHandler::OnAppInstallationStatus(const string &jsonresponse) {
     std::cout << "OnAppInstallationStatus: " << jsonresponse << std::endl;
 
-    if (jsonresponse.empty()) {
+    if (jsonresponse.empty())
         return;
-    }
 
     SceneSetApp& instance = SceneSetApp::getInstance();
-
-    // Format: [{"packageId":"appId","version":"x.y.z","state":"INSTALLED"}]
-    // Parse JSON array
+    static int installedCount = 0;
+    
     JsonArray packages;
     if (!packages.FromString(jsonresponse)) {
         std::cerr << "Failed to parse JSON response" << std::endl;
         return;
     }
 
-    // Iterate through the array as we get response in jsonarray format
-    JsonArray::Iterator index = packages.Elements();
-    while (index.Next()) {
-        const JsonValue& element = index.Current();
-        // Get the JSON object
-        if (element.Content() == JsonValue::type::OBJECT) {
-            JsonObject packageObj = element.Object();
-            std::string packageId;
-            std::string state;
-            
-            if (packageObj.HasLabel("packageId")) {
-                const JsonValue& pkgIdValue = packageObj["packageId"];
-                if (pkgIdValue.Content() == JsonValue::type::STRING) {
-                    packageId = pkgIdValue.String();
-                }
-            }
-            
-            if (packageObj.HasLabel("state")) {
-                const JsonValue& stateValue = packageObj["state"];
-                if (stateValue.Content() == JsonValue::type::STRING) {
-                    state = stateValue.String();
-                }
-            }
-            
-            std::cout << "Package: " << packageId << ", State: " << state << std::endl;
-            
-            // Check if this is the reference app and it is installed/updated
-            if (!instance.m_referenceAppId.empty() &&
-                packageId == instance.m_referenceAppId &&
-                state == "INSTALLED") {
-                bool expected = false;
-                if (instance.m_appLaunched.compare_exchange_strong(expected, true)) {
-                    std::cout << "Reference app '" << packageId << "' " << state << " via preinstall. Launching default app." << std::endl;
-                    instance.startLaunchThread();
-                    // Clean up preinstall folder after reference app is started
-                    instance.cleanupPreinstallFolder();
-                }
-                break;
-            }
+    // Count installed apps from this event
+    for (auto it = packages.Elements(); it.Next(); ) {
+        if (it.Current().Content() != JsonValue::type::OBJECT) continue;
+        
+        JsonObject packageObj = it.Current().Object();
+        std::string packageId, state;
+        
+        if (packageObj.HasLabel("packageId") && packageObj["packageId"].Content() == JsonValue::type::STRING)
+            packageId = packageObj["packageId"].String();
+        
+        if (packageObj.HasLabel("state") && packageObj["state"].Content() == JsonValue::type::STRING)
+            state = packageObj["state"].String();
+        
+        std::cout << "Package: " << packageId << ", State: " << state << std::endl;
+        
+        if (state == "INSTALLED")
+            installedCount++;
+    }
+
+    namespace fs = std::filesystem;
+    int expectedAppCount = 0;
+    if (fs::exists(APP_PREINSTALL_DIRECTORY)) {
+        for ([[maybe_unused]] const auto& entry : fs::directory_iterator(APP_PREINSTALL_DIRECTORY)) {
+            if (fs::is_directory(entry.status())) expectedAppCount++;
         }
+    }
+
+    std::cout << "Apps installed: " << installedCount << " / " << expectedAppCount << std::endl;
+
+    // Launch reference UI only after all preinstalled apps are installed
+    if (installedCount >= expectedAppCount && instance.isReferenceAppInstalled()) {
+        bool expected = false;
+        if (instance.m_appLaunched.compare_exchange_strong(expected, true)) {
+            std::cout << "All " << expectedAppCount << " preinstalled apps are installed. Launching reference app: " 
+                      << instance.m_referenceAppId << std::endl;
+            instance.startLaunchThread();
+        }
+        instance.cleanupPreinstallFolder();
     }
 }
 
