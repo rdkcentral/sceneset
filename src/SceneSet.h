@@ -80,10 +80,13 @@ private:
     std::unique_ptr<std::thread> m_launchThread;
     std::atomic<bool> m_stopLaunchThread;
     std::atomic<bool> m_appLaunched;
+    std::atomic<int> m_expectedAppCount;
+    std::atomic<int> m_installedCount;
     std::mutex m_launchThreadMutex;
 
     void stopCurrentLaunchThread();
     void startLaunchThread();
+    void initializeExpectedAppCount();
 
     class AppManagerEventHandler : public Exchange::IAppManager::INotification {
     public:

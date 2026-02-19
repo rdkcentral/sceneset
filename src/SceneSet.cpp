@@ -58,7 +58,7 @@ static std::string getDefaultAppName() {
 }
 
 SceneSetApp::SceneSetApp()
-    :  m_act_cv(), m_isActive(false), m_lock(), m_appManager(nullptr), m_preinstallManager(nullptr), m_appManagerEventHandler(nullptr), m_preinstallManagerEventHandler(nullptr), m_appmgrCallsign("org.rdk.AppManager"), m_preinstallCallsign("org.rdk.PreinstallManager"), m_referenceAppId(getDefaultAppName()), m_comrpcPath("/tmp/communicator"), m_launchThread(nullptr), m_stopLaunchThread(false), m_appLaunched(false), m_launchThreadMutex() {
+    :  m_act_cv(), m_isActive(false), m_lock(), m_appManager(nullptr), m_preinstallManager(nullptr), m_appManagerEventHandler(nullptr), m_preinstallManagerEventHandler(nullptr), m_appmgrCallsign("org.rdk.AppManager"), m_preinstallCallsign("org.rdk.PreinstallManager"), m_referenceAppId(getDefaultAppName()), m_comrpcPath("/tmp/communicator"), m_launchThread(nullptr), m_stopLaunchThread(false), m_appLaunched(false), m_expectedAppCount(0), m_installedCount(0), m_launchThreadMutex() {
 }
 
 SceneSetApp::~SceneSetApp() {
@@ -385,6 +385,7 @@ bool SceneSetApp::copyFactoryAppsToPreinstall() {
     } else {
         std::cout << "No factory app bundles found to copy" << std::endl;
     }
+    m_expectedAppCount = fileCount;
     markFactoryAppsCopied();
     return true;
 }
@@ -478,6 +479,37 @@ SceneSetApp& SceneSetApp::getInstance() {
     return instance;
 }
 
+void SceneSetApp::initializeExpectedAppCount() {
+    namespace fs = std::filesystem;
+    int count = 0;
+    
+    // Treat an empty preinstall directory configuration as "no apps to preinstall".
+    if (std::string_view(APP_PREINSTALL_DIRECTORY).empty()) {
+        std::cout << "Preinstall directory not configured; assuming 0 apps to preinstall" << std::endl;
+        m_expectedAppCount = 0;
+        std::cout << "Number of apps to preinstall: " << m_expectedAppCount << std::endl;
+        return;
+    }
+    
+    try {
+        if (fs::exists(APP_PREINSTALL_DIRECTORY)) {
+            for (const auto& entry : fs::directory_iterator(APP_PREINSTALL_DIRECTORY)) {
+                auto status = entry.status();
+                if (fs::is_directory(status)) {
+                    count++;
+                }
+            }
+        }
+    } catch (const fs::filesystem_error& e) {
+        std::cerr << "Error accessing preinstall directory '" << APP_PREINSTALL_DIRECTORY
+                  << "': " << e.what() << ". Assuming 0 apps to preinstall." << std::endl;
+        count = 0;
+    }
+    
+    m_expectedAppCount = count;
+    std::cout << "Number of apps to preinstall: " << count << std::endl;
+}
+
 void SceneSetApp::run() {
     if (!initialize()) return;
     sd_notifyf(0, "READY=1\n"
@@ -495,10 +527,13 @@ void SceneSetApp::run() {
     if (!isFactoryAppsCopied()) {
         std::cout << "First boot detected. Copying factory apps to preinstall folder." << std::endl;
         if (!copyFactoryAppsToPreinstall()) {
-            std::cerr << "Failed to copy factory apps. Continuing with preinstall anyway." << std::endl;
+            std::cerr << "Failed to copy factory apps. Initializing expected count from existing preinstall directory." << std::endl;
+            initializeExpectedAppCount();
         }
     } else {
         std::cout << "Factory apps already copied on first boot. Skipping copy." << std::endl;
+        // Initialize expected app count from existing preinstall directory
+        initializeExpectedAppCount();
     }
 
     // Start preinstall
@@ -617,7 +652,6 @@ void SceneSetApp::PreinstallManagerEventHandler::OnAppInstallationStatus(const s
         return;
 
     SceneSetApp& instance = SceneSetApp::getInstance();
-    static int installedCount = 0;
     
     JsonArray packages;
     if (!packages.FromString(jsonresponse)) {
@@ -625,7 +659,7 @@ void SceneSetApp::PreinstallManagerEventHandler::OnAppInstallationStatus(const s
         return;
     }
 
-    // Count installed apps from this event
+    // Keep count of installed apps from event
     for (auto it = packages.Elements(); it.Next(); ) {
         if (it.Current().Content() != JsonValue::type::OBJECT) continue;
         
@@ -641,28 +675,22 @@ void SceneSetApp::PreinstallManagerEventHandler::OnAppInstallationStatus(const s
         std::cout << "Package: " << packageId << ", State: " << state << std::endl;
         
         if (state == "INSTALLED")
-            installedCount++;
+            instance.m_installedCount++;
     }
 
-    namespace fs = std::filesystem;
-    int expectedAppCount = 0;
-    if (fs::exists(APP_PREINSTALL_DIRECTORY)) {
-        for ([[maybe_unused]] const auto& entry : fs::directory_iterator(APP_PREINSTALL_DIRECTORY)) {
-            if (fs::is_directory(entry.status())) expectedAppCount++;
-        }
-    }
-
+    int expectedAppCount = instance.m_expectedAppCount.load();
+    int installedCount = instance.m_installedCount.load();
     std::cout << "Apps installed: " << installedCount << " / " << expectedAppCount << std::endl;
 
     // Launch reference UI only after all preinstalled apps are installed
-    if (installedCount >= expectedAppCount && instance.isReferenceAppInstalled()) {
+    if (expectedAppCount > 0 && installedCount >= expectedAppCount) {
         bool expected = false;
         if (instance.m_appLaunched.compare_exchange_strong(expected, true)) {
             std::cout << "All " << expectedAppCount << " preinstalled apps are installed. Launching reference app: " 
                       << instance.m_referenceAppId << std::endl;
             instance.startLaunchThread();
+            instance.cleanupPreinstallFolder();
         }
-        instance.cleanupPreinstallFolder();
     }
 }
 
