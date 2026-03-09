@@ -106,7 +106,7 @@ private:
     class PreinstallManagerEventHandler : public Exchange::IPreinstallManager::INotification {
     public:
         ~PreinstallManagerEventHandler();
-        void OnAppInstallationStatus(const string &jsonresponse) override;
+        void OnComplete() override;
         uint32_t AddRef() const override;
         uint32_t Release() const override;
         BEGIN_INTERFACE_MAP(PreinstallManagerEventHandler)

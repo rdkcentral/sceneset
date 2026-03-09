@@ -634,57 +634,8 @@ void SceneSetApp::startLaunchThread() {
 
 SceneSetApp::PreinstallManagerEventHandler::~PreinstallManagerEventHandler() {}
 
-void SceneSetApp::PreinstallManagerEventHandler::OnAppInstallationStatus(const string &jsonresponse) {
-    std::cout << "OnAppInstallationStatus: " << jsonresponse << std::endl;
-
-    if (jsonresponse.empty()) {
-        return;
-    }
-
-    // Note: startPreinstall() is SYNCHRONOUS and blocks until all installations complete.
-    // This handler is kept for logging and monitoring purposes .
-
-    // Parse JSON array
-    JsonArray packages;
-    if (!packages.FromString(jsonresponse)) {
-        std::cerr << "Failed to parse JSON response" << std::endl;
-        return;
-    }
-
-    // Iterate through the array and log installation status
-    JsonArray::Iterator index = packages.Elements();
-    while (index.Next()) {
-        const JsonValue& element = index.Current();
-        if (element.Content() == JsonValue::type::OBJECT) {
-            JsonObject packageObj = element.Object();
-            std::string packageId;
-            std::string state;
-            std::string version;
-            
-            if (packageObj.HasLabel("packageId")) {
-                const JsonValue& pkgIdValue = packageObj["packageId"];
-                if (pkgIdValue.Content() == JsonValue::type::STRING) {
-                    packageId = pkgIdValue.String();
-                }
-            }
-            
-            if (packageObj.HasLabel("state")) {
-                const JsonValue& stateValue = packageObj["state"];
-                if (stateValue.Content() == JsonValue::type::STRING) {
-                    state = stateValue.String();
-                }
-            }
-            
-            if (packageObj.HasLabel("version")) {
-                const JsonValue& versionValue = packageObj["version"];
-                if (versionValue.Content() == JsonValue::type::STRING) {
-                    version = versionValue.String();
-                }
-            }
-            
-            std::cout << "Package: " << packageId << ", Version: " << version << ", State: " << state << std::endl;
-        }
-    }
+void SceneSetApp::PreinstallManagerEventHandler::OnComplete() {
+    std::cout << "Received OnComplete event" << std::endl;
 }
 
 uint32_t SceneSetApp::PreinstallManagerEventHandler::AddRef() const {
