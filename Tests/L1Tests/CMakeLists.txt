@@ -19,11 +19,13 @@ cmake_minimum_required(VERSION 3.8)
 
 project(SceneSetL1Tests)
 
-set(CMAKE_CXX_STANDARD 14)
+# Force C++17 even if Thunder cmake modules have already set a lower standard.
+set(CMAKE_CXX_STANDARD 17 CACHE STRING "C++ standard" FORCE)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Find required packages
 find_package(GTest REQUIRED)
+find_package(libralf CONFIG REQUIRED)
 
 # Set the executable name
 set(TEST_EXECUTABLE SceneSetL1TestsIN)
@@ -31,11 +33,14 @@ set(TEST_EXECUTABLE SceneSetL1TestsIN)
 # Source files - include the actual SceneSet implementation
 set(TEST_SRC
     tests/test_SceneSet.cpp
+    tests/test_download_monitor.cpp
     ../../src/SceneSet.cpp
+    ../../src/RalfPackageSupport.cpp
    )
 
 # Create the test executable
 add_executable(${TEST_EXECUTABLE} ${TEST_SRC})
+target_compile_definitions(${TEST_EXECUTABLE} PRIVATE UNIT_TEST)
 
 # WPEFramework library paths
 set(WPEFRAMEWORK_LIB_DIR ${CMAKE_INSTALL_PREFIX}/lib)
@@ -52,11 +57,34 @@ target_link_libraries(${TEST_EXECUTABLE}
     dl
 )
 
+    # GCC < 9 requires explicit -lstdc++fs when using <filesystem> in C++17 mode.
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9)
+        target_link_libraries(${TEST_EXECUTABLE} PRIVATE stdc++fs)
+    endif()
+
+if(TARGET ralf-utils::libralf)
+    target_link_libraries(${TEST_EXECUTABLE} PRIVATE ralf-utils::libralf)
+elseif(TARGET libralf)
+    target_link_libraries(${TEST_EXECUTABLE} PRIVATE libralf)
+elseif(TARGET ralf-utils::libralf-static)
+    message(WARNING "Only static libralf target available. Linking ralf-utils::libralf-static.")
+    target_link_libraries(${TEST_EXECUTABLE} PRIVATE ralf-utils::libralf-static)
+elseif(TARGET libralf-static)
+    message(WARNING "Only static libralf target available. Linking libralf-static.")
+    target_link_libraries(${TEST_EXECUTABLE} PRIVATE libralf-static)
+else()
+    message(FATAL_ERROR "libralf package found but no usable CMake target exported (expected ralf-utils::libralf, libralf, ralf-utils::libralf-static, or libralf-static)")
+endif()
+
+# Resolve src directory to an absolute path so the compiler receives a clean
+# -I flag without '../../' segments (which can confuse GCC path resolution).
+get_filename_component(SCENESET_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../src" ABSOLUTE)
+
 # Include directories
 target_include_directories(${TEST_EXECUTABLE}
     PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../src
+    ${SCENESET_SRC_DIR}
     ${GTEST_INCLUDE_DIRS}
     ${WPEFRAMEWORK_INCLUDE_DIR}
     ${WPEFRAMEWORK_INCLUDE_DIR}/WPEFramework
