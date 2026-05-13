@@ -21,11 +21,11 @@ SceneSet is designed to run as a systemd service that:
 - **Factory Settings Reset (FSR) Support**: Detects first boot via a marker file and copies factory app bundles to the preinstall directory using force-install mode; subsequent boots use normal (version-aware) install mode
 - **Over-the-Air Update Monitoring**: Watches a configured download directory for new RALF packages using inotify; verifies them with libralf and stages them for installation via PreinstallManager
 - **Reference App Update & Restart**: Detects when a new version of the reference app is installed and automatically kills and restarts it
-- **PackageInstaller Event Monitoring**: Tracks per-package installation status from `org.rdk.PackageManagerRDKEMS` to confirm successful preinstall before cleaning up staged bundles
+- **PackageInstaller Event Monitoring**: Tracks per-package installation status from `org.rdk.AppPackageManager` to confirm successful preinstall before cleaning up staged bundles
 - **Crash Recovery**: Automatically restarts the reference app on an ABORT lifecycle error
 - **Signal Handling**: Graceful shutdown on SIGTERM/SIGINT signals
 - **Systemd Integration**: Reports readiness via `sd_notify` and runs as a `Type=notify` systemd service
-- **Thunder Integration**: Uses WPEFramework COMRPC for AppManager, PreinstallManager, and PackageManagerRDKEMS communication
+- **Thunder Integration**: Uses WPEFramework COMRPC for AppManager, PreinstallManager, and AppPackageManager communication
 
 ## Configuration
 

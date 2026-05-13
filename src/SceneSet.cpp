@@ -58,7 +58,7 @@
 #define FACTORY_APPS_COPIED_MARKER "/opt/persistent/.sceneset_factory_apps_copied"
 
 namespace { // begin file-private constants and helpers
-constexpr const char* kPackageManagerRdkEmsCallsign = "org.rdk.PackageManagerRDKEMS";
+constexpr const char* kAppPackageManagerCallsign = "org.rdk.AppPackageManager";
 constexpr const char* kPackageManagerDownloadDirKey = "downloadDir";
 constexpr const char* kPreinstallDirectoryKey = "appPreinstallDirectory";
 constexpr const char* kInitialDownloadSweepEnvVar = "SCENESET_INITIAL_DOWNLOAD_SWEEP";
