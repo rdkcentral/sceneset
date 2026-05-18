@@ -58,7 +58,7 @@ The project uses CMake for building.
 
 ### Dependencies
 
-- **WPEFramework**: Core framework and interfaces (AppManager, PreinstallManager, PackageManagerRDKEMS)
+- **WPEFramework**: Core framework and interfaces (AppManager, PreinstallManager, AppPackageManager)
 - **libralf**: RALF package verification and metadata extraction
 - **libsystemd**: systemd integration (`sd_notify`)
 - **gtest/gmock**: For unit testing
@@ -79,7 +79,7 @@ The project uses CMake for building.
 
 ## Startup Flow
 
-1. Connects to AppManager, PreinstallManager, and PackageManagerRDKEMS via COMRPC
+1. Connects to AppManager, PreinstallManager, and AppPackageManager via COMRPC
 2. Registers for events from all three interfaces
 3. Detects first boot (FSR) by checking for marker file `/opt/persistent/.sceneset_factory_apps_copied`
 4. On first boot: copies factory app bundles from `FACTORY_APP_PATH` to the preinstall directory
@@ -93,7 +93,7 @@ The project uses CMake for building.
 SceneSet connects to the following WPEFramework plugins at runtime:
 - **`org.rdk.AppManager`** — app lifecycle management and launch
 - **`org.rdk.PreinstallManager`** — bundle preinstallation and completion notification
-- **`org.rdk.PackageManagerRDKEMS`** — per-package installation status events and download directory configuration
+- **`org.rdk.AppPackageManager`** — per-package installation status events and download directory configuration
 
 The systemd service unit requires:
 - **Requires/After**: `wpeframework-appmanager.service`
