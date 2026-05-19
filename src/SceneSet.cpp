@@ -37,6 +37,7 @@
 #include <unistd.h>
 #include <string_view>
 #include <optional>
+#include <unordered_map>
 
 #ifndef GIT_SHORT_SHA
 #define GIT_SHORT_SHA "unknown"
@@ -54,8 +55,13 @@
 #define APP_PREINSTALL_DIRECTORY ""
 #endif
 
+#ifndef SCENESET_DEBUG_BUILD
+#define SCENESET_DEBUG_BUILD 0
+#endif
+
 #define SCENESET_CONFIG_FILE "/opt/sceneset_app.conf"
 #define SCENESET_SYSTEM_CONFIG_FILE "/etc/sceneset.conf"
+#define SCENESET_OVERRIDE_CONFIG_FILE "/opt/sceneset.conf"
 #define FACTORY_APPS_COPIED_MARKER "/opt/persistent/.sceneset_factory_apps_copied"
 
 namespace { // begin file-private constants and helpers
@@ -63,8 +69,10 @@ constexpr const char* kAppPackageManagerCallsign = "org.rdk.AppPackageManager";
 constexpr const char* kPackageManagerDownloadDirKey = "downloadDir";
 constexpr const char* kPreinstallDirectoryKey = "appPreinstallDirectory";
 constexpr const char* kPreinstallLocationSettingKey = "preinstallLocation";
+constexpr const char* kDefaultHomeAppSettingKey = "defaultHomeApp";
 constexpr const char* kInitialDownloadSweepEnvVar = "SCENESET_INITIAL_DOWNLOAD_SWEEP";
 constexpr const char* kSceneSetSystemConfigEnvVar = "SCENESET_SYSTEM_CONFIG_FILE";
+constexpr const char* kSceneSetOverrideConfigEnvVar = "SCENESET_OVERRIDE_CONFIG_FILE";
 constexpr const char* kPackageInstallStateInstalled = "INSTALLED";
 constexpr const char* kPackageInstallStateInstalling = "INSTALLING";
 constexpr std::chrono::milliseconds kDownloadedPackageSettleDelayMs(1000);
@@ -169,6 +177,31 @@ bool splitKeyValueLine(const std::string& line, std::string& key, std::string& v
     key = trimString(line.substr(0, eqPos));
     value = trimString(line.substr(eqPos + 1));
     return !key.empty();
+}
+
+bool parseSystemConfig(const std::string& configPath, std::unordered_map<std::string, std::string>& values) {
+    std::ifstream configFile(configPath);
+    if (!configFile.is_open()) {
+        return false;
+    }
+
+    std::string line;
+    while (std::getline(configFile, line)) {
+        std::string trimmedLine = trimString(line);
+        if (trimmedLine.empty() || trimmedLine[0] == '#') {
+            continue;
+        }
+
+        std::string key;
+        std::string rawValue;
+        if (!splitKeyValueLine(trimmedLine, key, rawValue)) {
+            continue;
+        }
+
+        values[key] = trimString(stripSurroundingQuotes(rawValue));
+    }
+
+    return true;
 }
 } // end file-private constants and helpers
 
@@ -321,11 +354,45 @@ bool SceneSetApp::initialize() {
     resolveDynamicDirectories();
 
     std::string preinstallDirectorySource = "PreinstallManager plugin config";
-    std::string preinstallLocationFromConfig;
-    if (readPreinstallLocationFromSystemConfig(preinstallLocationFromConfig)) {
-        m_preinstallDirectory = preinstallLocationFromConfig;
-        preinstallDirectorySource = getSystemConfigPath() + " preinstallLocation";
-    } else if (m_preinstallDirectory.empty()) {
+    std::unordered_map<std::string, std::string> systemConfig;
+    if (loadSystemConfig(systemConfig))
+    {
+        const auto preinstallIt = systemConfig.find(kPreinstallLocationSettingKey);
+        if (preinstallIt != systemConfig.end())
+        {
+            const std::string preinstallLocationFromConfig = preinstallIt->second;
+            if (preinstallLocationFromConfig.empty())
+            {
+                std::cerr << "Ignoring empty preinstallLocation in system config" << std::endl;
+            }
+            else if (!std::filesystem::path(preinstallLocationFromConfig).is_absolute())
+            {
+                std::cerr << "Ignoring non-absolute preinstallLocation in system config: "
+                          << preinstallLocationFromConfig << std::endl;
+            }
+            else
+            {
+                m_preinstallDirectory = preinstallLocationFromConfig;
+                preinstallDirectorySource = "system config preinstallLocation";
+            }
+        }
+
+        const auto defaultHomeAppIt = systemConfig.find(kDefaultHomeAppSettingKey);
+        if (defaultHomeAppIt != systemConfig.end())
+        {
+            if (!defaultHomeAppIt->second.empty())
+            {
+                m_referenceAppId = defaultHomeAppIt->second;
+                std::cout << "Using defaultHomeApp from system config: " << m_referenceAppId << std::endl;
+            }
+            else
+            {
+                std::cerr << "Ignoring empty defaultHomeApp in system config" << std::endl;
+            }
+        }
+    }
+
+    if (m_preinstallDirectory.empty()) {
         // Fall back to compile-time default if runtime lookup did not yield a value.
         m_preinstallDirectory = APP_PREINSTALL_DIRECTORY;
         preinstallDirectorySource = "compile-time APP_PREINSTALL_DIRECTORY";
@@ -1547,45 +1614,30 @@ std::string SceneSetApp::getSystemConfigPath() const {
     return SCENESET_SYSTEM_CONFIG_FILE;
 }
 
-bool SceneSetApp::readPreinstallLocationFromSystemConfig(std::string& value) const {
-    value.clear();
-
+bool SceneSetApp::loadSystemConfig(std::unordered_map<std::string, std::string>& values) const {
+    values.clear();
     const std::string configPath = getSystemConfigPath();
-    std::ifstream configFile(configPath);
-    if (!configFile.is_open()) {
+    if (!parseSystemConfig(configPath, values)) {
         return false;
     }
 
-    std::string line;
-    while (std::getline(configFile, line)) {
-        std::string trimmedLine = trimString(line);
-        if (trimmedLine.empty() || trimmedLine[0] == '#') {
-            continue;
-        }
-
-        std::string key;
-        std::string rawValue;
-        if (!splitKeyValueLine(trimmedLine, key, rawValue) || key != kPreinstallLocationSettingKey) {
-            continue;
-        }
-
-        std::string parsedValue = trimString(stripSurroundingQuotes(rawValue));
-        if (parsedValue.empty()) {
-            std::cerr << "Ignoring empty preinstallLocation in " << configPath << std::endl;
-            return false;
-        }
-
-        if (!std::filesystem::path(parsedValue).is_absolute()) {
-            std::cerr << "Ignoring non-absolute preinstallLocation in " << configPath
-                      << ": " << parsedValue << std::endl;
-            return false;
-        }
-
-        value = parsedValue;
-        return true;
+#if SCENESET_DEBUG_BUILD
+    std::string overrideConfigPath = SCENESET_OVERRIDE_CONFIG_FILE;
+    const char* configuredOverridePath = std::getenv(kSceneSetOverrideConfigEnvVar);
+    if (configuredOverridePath != nullptr && configuredOverridePath[0] != '\0') {
+        overrideConfigPath = configuredOverridePath;
     }
 
-    return false;
+    std::unordered_map<std::string, std::string> overrideValues;
+    if (parseSystemConfig(overrideConfigPath, overrideValues)) {
+        for (const auto& [key, value] : overrideValues) {
+            values[key] = value;
+        }
+        std::cout << "Applied debug override config from " << overrideConfigPath << std::endl;
+    }
+#endif
+
+    return true;
 }
 
 SceneSetApp::PreinstallManagerEventHandler::~PreinstallManagerEventHandler() {}

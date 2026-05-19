@@ -91,6 +91,8 @@ if(DISABLE_REFERENCE_APP_UPDATE)
     message(WARNING "Reference app update will be disabled, SceneSet will not update the reference app")
 endif()
 
+set(SCENESET_DEBUG_BUILD OFF CACHE BOOL "Enable debug-only /opt/sceneset.conf override of /etc/sceneset.conf")
+
 include(GNUInstallDirs)
 target_include_directories(${TARGET} PRIVATE ${COMMON_INCLUDE_DIRS})
 target_link_libraries(${TARGET} PRIVATE ${COMMON_LIBRARIES} systemd)
@@ -128,6 +130,7 @@ target_compile_definitions(${TARGET} PRIVATE
     FACTORY_APP_PATH="${FACTORY_APP_PATH}"
     APP_PREINSTALL_DIRECTORY="${APP_PREINSTALL_DIRECTORY}"
     DAC_APP_CERT_PATH="${DAC_APP_CERT_PATH}"
+    SCENESET_DEBUG_BUILD=$<BOOL:${SCENESET_DEBUG_BUILD}>
     DISABLE_REFERENCE_APP_UPDATE=$<BOOL:${DISABLE_REFERENCE_APP_UPDATE}>
     GIT_SHORT_SHA="${GIT_SHORT_SHA}"
 )

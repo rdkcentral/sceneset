@@ -29,6 +29,7 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <unordered_map>
 
 #include "SceneSet.h"
 #include "RalfPackageSupport.h"
@@ -197,6 +198,10 @@ public:
 
     static bool ReadPreinstallLocationFromSystemConfig(const SceneSetApp& app, std::string& value) {
         return app.readPreinstallLocationFromSystemConfig(value);
+    }
+
+    static bool LoadSystemConfig(const SceneSetApp& app, std::unordered_map<std::string, std::string>& values) {
+        return app.loadSystemConfig(values);
     }
 
     static void CallResolveDynamicDirectories(SceneSetApp& app) {
@@ -3003,6 +3008,70 @@ TEST_F(SceneSetTest, ReadPreinstallLocationFromSystemConfigRejectsRelativePath) 
 
     std::string preinstallLocation;
     EXPECT_FALSE(SceneSetAppTestPeer::ReadPreinstallLocationFromSystemConfig(app, preinstallLocation));
+
+    std::error_code ec;
+    std::filesystem::remove(configPath, ec);
+}
+
+TEST_F(SceneSetTest, LoadSystemConfigReturnsValuesWhenPresent) {
+    SceneSetApp app;
+    const auto configPath = MakeUniqueTempPath("sceneset_system_config");
+    {
+        std::ofstream configFile(configPath);
+        configFile << "preinstallLocation=/tmp/preinstall_from_config" << std::endl;
+    }
+
+    setenv("SCENESET_SYSTEM_CONFIG_FILE", configPath.c_str(), 1);
+
+    std::unordered_map<std::string, std::string> values;
+    EXPECT_TRUE(SceneSetAppTestPeer::LoadSystemConfig(app, values));
+    ASSERT_TRUE(values.find("preinstallLocation") != values.end());
+    EXPECT_EQ(values["preinstallLocation"], "/tmp/preinstall_from_config");
+
+    std::error_code ec;
+    std::filesystem::remove(configPath, ec);
+}
+
+TEST_F(SceneSetTest, LoadSystemConfigReturnsFalseWhenFileMissing) {
+    SceneSetApp app;
+
+    const auto missingPath = MakeUniqueTempPath("sceneset_missing_system_config");
+    setenv("SCENESET_SYSTEM_CONFIG_FILE", missingPath.c_str(), 1);
+    std::unordered_map<std::string, std::string> values;
+    EXPECT_FALSE(SceneSetAppTestPeer::LoadSystemConfig(app, values));
+}
+
+TEST_F(SceneSetTest, LoadSystemConfigSucceedsWhenKeyAbsent) {
+    SceneSetApp app;
+    const auto configWithoutKeyPath = MakeUniqueTempPath("sceneset_system_config_no_key");
+    {
+        std::ofstream configFile(configWithoutKeyPath);
+        configFile << "someOtherSetting=/tmp/ignored" << std::endl;
+    }
+
+    setenv("SCENESET_SYSTEM_CONFIG_FILE", configWithoutKeyPath.c_str(), 1);
+    std::unordered_map<std::string, std::string> values;
+    EXPECT_TRUE(SceneSetAppTestPeer::LoadSystemConfig(app, values));
+    EXPECT_TRUE(values.find("preinstallLocation") == values.end());
+
+    std::error_code ec;
+    std::filesystem::remove(configWithoutKeyPath, ec);
+}
+
+TEST_F(SceneSetTest, LoadSystemConfigKeepsRelativePreinstallLocationAsConfigured) {
+    SceneSetApp app;
+    const auto configPath = MakeUniqueTempPath("sceneset_system_config_relative");
+    {
+        std::ofstream configFile(configPath);
+        configFile << "preinstallLocation=relative/preinstall/path" << std::endl;
+    }
+
+    setenv("SCENESET_SYSTEM_CONFIG_FILE", configPath.c_str(), 1);
+
+    std::unordered_map<std::string, std::string> values;
+    EXPECT_TRUE(SceneSetAppTestPeer::LoadSystemConfig(app, values));
+    ASSERT_TRUE(values.find("preinstallLocation") != values.end());
+    EXPECT_EQ(values["preinstallLocation"], "relative/preinstall/path");
 
     std::error_code ec;
     std::filesystem::remove(configPath, ec);
