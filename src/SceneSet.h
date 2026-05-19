@@ -130,6 +130,8 @@ private:
     std::string getThunderAccessPath() const;
     bool fetchPluginConfigValue(const std::string& callsign, const std::string& configKey, std::string& value) const;
     void resolveDynamicDirectories();
+    std::string getSystemConfigPath() const;
+    bool readPreinstallLocationFromSystemConfig(std::string& value) const;
 
     class AppManagerEventHandler : public Exchange::IAppManager::INotification {
     public:

@@ -19,6 +19,17 @@ SceneSet's behavior is controlled through a layered configuration system: compil
 If the file exists and its first line is non-empty, that value is used as the reference app ID.  
 If the file is absent, unreadable, or empty, the compile-time default (`SCENESET_DEFAULT_APPNAME`) is used.
 
+### 1.1 Runtime Config File — `preinstallLocation`
+
+| Property | Value |
+|---|---|
+| Path | `/etc/sceneset.conf` |
+| Format | `key=value` lines; `preinstallLocation=<absolute-path>` |
+| Priority | Highest for preinstall directory resolution |
+
+If `/etc/sceneset.conf` exists and contains a non-empty, usable `preinstallLocation`, SceneSet uses that value as the preinstall directory.  
+If the file is absent, unreadable, missing `preinstallLocation`, or the value is unusable, SceneSet falls back to existing resolution behavior.
+
 ---
 
 ### 2. Environment Variables
@@ -45,6 +56,8 @@ Resolved at startup via `PluginHost::IShell::ConfigLine()` through the Thunder C
 | `org.rdk.PreinstallManager` | `appPreinstallDirectory` | Preinstall directory for bundle staging |
 
 Dynamic lookup is attempted first. If lookup fails or returns an empty string, the compile-time CMake fallback is used for `appPreinstallDirectory`. There is no runtime fallback for `downloadDir` — if it cannot be resolved, download monitoring is disabled.
+
+For preinstall directory selection, dynamic `appPreinstallDirectory` is used only when `/etc/sceneset.conf` does not provide a usable `preinstallLocation` value.
 
 ---
 
@@ -86,6 +99,9 @@ referenceAppId resolution:
   SCENESET_DEFAULT_APPNAME (compile-time)
 
 preinstallDirectory resolution:
+  /etc/sceneset.conf → preinstallLocation
+        │ missing/empty/unusable
+        ▼
   PreinstallManager plugin config → appPreinstallDirectory
         │ empty
         ▼

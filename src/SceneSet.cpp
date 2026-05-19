@@ -55,13 +55,16 @@
 #endif
 
 #define SCENESET_CONFIG_FILE "/opt/sceneset_app.conf"
+#define SCENESET_SYSTEM_CONFIG_FILE "/etc/sceneset.conf"
 #define FACTORY_APPS_COPIED_MARKER "/opt/persistent/.sceneset_factory_apps_copied"
 
 namespace { // begin file-private constants and helpers
 constexpr const char* kAppPackageManagerCallsign = "org.rdk.AppPackageManager";
 constexpr const char* kPackageManagerDownloadDirKey = "downloadDir";
 constexpr const char* kPreinstallDirectoryKey = "appPreinstallDirectory";
+constexpr const char* kPreinstallLocationSettingKey = "preinstallLocation";
 constexpr const char* kInitialDownloadSweepEnvVar = "SCENESET_INITIAL_DOWNLOAD_SWEEP";
+constexpr const char* kSceneSetSystemConfigEnvVar = "SCENESET_SYSTEM_CONFIG_FILE";
 constexpr const char* kPackageInstallStateInstalled = "INSTALLED";
 constexpr const char* kPackageInstallStateInstalling = "INSTALLING";
 constexpr std::chrono::milliseconds kDownloadedPackageSettleDelayMs(1000);
@@ -134,6 +137,38 @@ bool isEnvFlagEnabled(const char* envVarName, const bool defaultValue) {
     std::cerr << "Invalid value for " << envVarName << "='" << rawValue
               << "'. Using default=" << (defaultValue ? "enabled" : "disabled") << std::endl;
     return defaultValue;
+}
+
+std::string trimString(std::string value) {
+    auto isNotSpace = [](unsigned char ch) {
+        return !std::isspace(ch);
+    };
+
+    value.erase(value.begin(), std::find_if(value.begin(), value.end(), isNotSpace));
+    value.erase(std::find_if(value.rbegin(), value.rend(), isNotSpace).base(), value.end());
+    return value;
+}
+
+std::string stripSurroundingQuotes(std::string value) {
+    if (value.size() >= 2) {
+        const char first = value.front();
+        const char last = value.back();
+        if ((first == '"' && last == '"') || (first == '\'' && last == '\'')) {
+            value = value.substr(1, value.size() - 2);
+        }
+    }
+    return value;
+}
+
+bool splitKeyValueLine(const std::string& line, std::string& key, std::string& value) {
+    const std::size_t eqPos = line.find('=');
+    if (eqPos == std::string::npos) {
+        return false;
+    }
+
+    key = trimString(line.substr(0, eqPos));
+    value = trimString(line.substr(eqPos + 1));
+    return !key.empty();
 }
 } // end file-private constants and helpers
 
@@ -284,10 +319,18 @@ bool SceneSetApp::initialize() {
     std::cout << "Successfully opened " << kAppPackageManagerCallsign << " installer interface" << std::endl;
 
     resolveDynamicDirectories();
-    if (m_preinstallDirectory.empty()) {
-        // Fall back to compile-time default if dynamic lookup did not yield a value.
+
+    std::string preinstallDirectorySource = "PreinstallManager plugin config";
+    std::string preinstallLocationFromConfig;
+    if (readPreinstallLocationFromSystemConfig(preinstallLocationFromConfig)) {
+        m_preinstallDirectory = preinstallLocationFromConfig;
+        preinstallDirectorySource = getSystemConfigPath() + " preinstallLocation";
+    } else if (m_preinstallDirectory.empty()) {
+        // Fall back to compile-time default if runtime lookup did not yield a value.
         m_preinstallDirectory = APP_PREINSTALL_DIRECTORY;
+        preinstallDirectorySource = "compile-time APP_PREINSTALL_DIRECTORY";
     }
+
     if (m_preinstallDirectory.empty()) {
         std::cerr << "No valid appPreinstallDirectory configured, cannot proceed." << std::endl;
         if (m_preinstallManager != nullptr) {
@@ -305,6 +348,8 @@ bool SceneSetApp::initialize() {
         restoreMaskOnExit();
         return false;
     }
+    std::cout << "Resolved preinstall directory from " << preinstallDirectorySource
+              << ": " << m_preinstallDirectory << std::endl;
     if (m_downloadDirectory.empty()) {
         std::cout << "downloadDir is empty. Reference app update monitoring will remain disabled." << std::endl;
     }
@@ -1492,6 +1537,55 @@ void SceneSetApp::resolveDynamicDirectories() {
         m_preinstallDirectory = preinstallDir;
         std::cout << "Updated appPreinstallDirectory from PreinstallManager plugin config: " << m_preinstallDirectory << std::endl;
     }
+}
+
+std::string SceneSetApp::getSystemConfigPath() const {
+    const char* configuredPath = std::getenv(kSceneSetSystemConfigEnvVar);
+    if (configuredPath != nullptr && configuredPath[0] != '\0') {
+        return configuredPath;
+    }
+    return SCENESET_SYSTEM_CONFIG_FILE;
+}
+
+bool SceneSetApp::readPreinstallLocationFromSystemConfig(std::string& value) const {
+    value.clear();
+
+    const std::string configPath = getSystemConfigPath();
+    std::ifstream configFile(configPath);
+    if (!configFile.is_open()) {
+        return false;
+    }
+
+    std::string line;
+    while (std::getline(configFile, line)) {
+        std::string trimmedLine = trimString(line);
+        if (trimmedLine.empty() || trimmedLine[0] == '#') {
+            continue;
+        }
+
+        std::string key;
+        std::string rawValue;
+        if (!splitKeyValueLine(trimmedLine, key, rawValue) || key != kPreinstallLocationSettingKey) {
+            continue;
+        }
+
+        std::string parsedValue = trimString(stripSurroundingQuotes(rawValue));
+        if (parsedValue.empty()) {
+            std::cerr << "Ignoring empty preinstallLocation in " << configPath << std::endl;
+            return false;
+        }
+
+        if (!std::filesystem::path(parsedValue).is_absolute()) {
+            std::cerr << "Ignoring non-absolute preinstallLocation in " << configPath
+                      << ": " << parsedValue << std::endl;
+            return false;
+        }
+
+        value = parsedValue;
+        return true;
+    }
+
+    return false;
 }
 
 SceneSetApp::PreinstallManagerEventHandler::~PreinstallManagerEventHandler() {}
