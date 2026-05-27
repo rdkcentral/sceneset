@@ -19,7 +19,18 @@ SceneSet's behavior is controlled through a layered configuration system: compil
 If the file exists and its first line is non-empty, that value is used as the reference app ID.  
 If the file is absent, unreadable, or empty, the compile-time default (`SCENESET_DEFAULT_APPNAME`) is used.
 
-### 1.1 Runtime Config File — `preinstallLocation`
+### 1.1 Runtime Config File — `defaultHomeApp`
+
+| Property | Value |
+|---|---|
+| Path | `/etc/sceneset.conf` |
+| Format | `key=value` lines; `defaultHomeApp=<app-id>` |
+| Priority | Highest for final reference app selection when non-empty |
+
+If `/etc/sceneset.conf` exists and contains a non-empty `defaultHomeApp`, SceneSet uses that value as the final reference app ID.  
+If the file is absent, unreadable, missing `defaultHomeApp`, or the value is empty, SceneSet keeps the previously resolved reference app ID from `/opt/sceneset_app.conf` or `SCENESET_DEFAULT_APPNAME`.
+
+### 1.2 Runtime Config File — `preinstallLocation`
 
 | Property | Value |
 |---|---|
@@ -97,6 +108,9 @@ referenceAppId resolution:
         │ not found/empty
         ▼
   SCENESET_DEFAULT_APPNAME (compile-time)
+                        │ then if non-empty defaultHomeApp exists
+                        ▼
+      /etc/sceneset.conf → defaultHomeApp (overrides final referenceAppId)
 
 preinstallDirectory resolution:
   /etc/sceneset.conf → preinstallLocation

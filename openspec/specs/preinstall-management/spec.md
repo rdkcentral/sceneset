@@ -81,9 +81,10 @@ When cleanup is triggered:
 
 The preinstall directory is resolved in the following order of priority:
 
-1. Dynamically fetched from `PreinstallManager` plugin config key `appPreinstallDirectory` at startup via the Thunder Controller.
-2. Compile-time `APP_PREINSTALL_DIRECTORY` CMake variable (fallback if dynamic lookup returns empty).
-3. If both are empty after initialization, SceneSet fails to start.
+1. `preinstallLocation` from `/etc/sceneset.conf`, when present with a non-empty absolute path.
+2. Dynamically fetched from `PreinstallManager` plugin config key `appPreinstallDirectory` at startup via the Thunder Controller.
+3. Compile-time `APP_PREINSTALL_DIRECTORY` CMake variable (fallback if dynamic lookup returns empty).
+4. If all sources are unavailable or unusable after initialization, SceneSet fails to start.
 
 ---
 
