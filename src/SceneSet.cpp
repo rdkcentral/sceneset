@@ -384,6 +384,7 @@ bool SceneSetApp::initialize() {
         const auto defaultHomeAppIt = systemConfig.find(kDefaultHomeAppSettingKey);
         if (defaultHomeAppIt != systemConfig.end())
         {
+#if SCENESET_ENTOS_BUILD
             if (!defaultHomeAppIt->second.empty())
             {
                 m_referenceAppId = defaultHomeAppIt->second;
@@ -393,6 +394,7 @@ bool SceneSetApp::initialize() {
             {
                 std::cerr << "Ignoring empty defaultHomeApp in system config" << std::endl;
             }
+#endif // SCENESET_ENTOS_BUILD 
         }
     }
 

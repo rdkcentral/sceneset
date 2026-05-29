@@ -2161,8 +2161,8 @@ TEST_F(AppManagerEventHandlerTest, OnAppLifecycleStateChangedDoesNotClearAppLaun
 }
 
 // UNLOADED from TERMINATING with a non-ABORT error reason and no pendingRestart
-// takes only the inner else (no restart) path
-TEST_F(AppManagerEventHandlerTest, OnAppLifecycleStateChangedNoRestartOnUnloadedFromTerminatingWithNonAbortReason) {
+// keeps flags in a consistent state regardless of build type.
+TEST_F(AppManagerEventHandlerTest, OnAppLifecycleStateChangedNonAbortKeepsExpectedFlags) {
     SceneSetApp& instance = SceneSetApp::getInstance();
     const std::string& refId = SceneSetAppTestPeer::GetReferenceAppId(instance);
     if (refId.empty()) {
@@ -2171,9 +2171,6 @@ TEST_F(AppManagerEventHandlerTest, OnAppLifecycleStateChangedNoRestartOnUnloaded
     SceneSetAppTestPeer::SetAppLaunched(instance, true);
     SceneSetAppTestPeer::SetPendingRestart(instance, false);
 
-    // oldState=TERMINATING but errorReason is 0 (not APP_ERROR_ABORT) — the inner
-    // else-if condition is false so neither the pendingRestart nor the crash-restart
-    // branch is entered.
     EXPECT_NO_THROW({
         SceneSetAppTestPeer::CallAppManagerOnAppLifecycleStateChanged(
             refId, "inst-1",
@@ -2956,6 +2953,44 @@ TEST_F(AppManagerMockEventHandlerTest, OnAppLifecycleStateChangedAbortTriggersCr
 
     EXPECT_EQ(future.wait_for(std::chrono::milliseconds(500)), std::future_status::ready)
         << "LaunchApp was not called within the expected timeout";
+}
+
+// Validates compile-time lifecycle behavior for non-ABORT unloads:
+// - default build: no restart
+// - EntOS build: restart on TERMINATING -> UNLOADED
+TEST_F(AppManagerMockEventHandlerTest, OnAppLifecycleStateChangedNonAbortBehaviorMatchesBuildType) {
+    SceneSetApp& instance = SceneSetApp::getInstance();
+    const std::string& refId = SceneSetAppTestPeer::GetReferenceAppId(instance);
+    if (refId.empty()) {
+        GTEST_SKIP() << "Reference app ID is empty; skipping.";
+    }
+    SceneSetAppTestPeer::SetAppLaunched(instance, true);
+    SceneSetAppTestPeer::SetPendingRestart(instance, false);
+
+#if SCENESET_ENTOS_BUILD
+    auto launchCalled = std::make_shared<std::promise<void>>();
+    auto future = launchCalled->get_future();
+    EXPECT_CALL(mockAppMgr, LaunchApp(refId, testing::_, testing::_))
+        .WillOnce(testing::DoAll(
+            testing::InvokeWithoutArgs([launchCalled]() { launchCalled->set_value(); }),
+            testing::Return(Core::ERROR_NONE)));
+#else
+    EXPECT_CALL(mockAppMgr, LaunchApp(testing::_, testing::_, testing::_)).Times(0);
+#endif
+
+    SceneSetAppTestPeer::CallAppManagerOnAppLifecycleStateChanged(
+        refId, "inst-1",
+        Exchange::IAppManager::AppLifecycleState::APP_STATE_UNLOADED,
+        Exchange::IAppManager::AppLifecycleState::APP_STATE_TERMINATING,
+        static_cast<Exchange::IAppManager::AppErrorReason>(0));
+
+    EXPECT_FALSE(SceneSetAppTestPeer::GetAppLaunched(instance));
+    EXPECT_FALSE(SceneSetAppTestPeer::GetPendingRestart(instance));
+
+#if SCENESET_ENTOS_BUILD
+    EXPECT_EQ(future.wait_for(std::chrono::milliseconds(500)), std::future_status::ready)
+        << "LaunchApp was not called within the expected timeout";
+#endif
 }
 
 TEST_F(SceneSetTest, LoadSystemConfigReturnsValuesWhenPresent) {

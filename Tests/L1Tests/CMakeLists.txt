@@ -108,3 +108,66 @@ endif()
 
 # Install the binary
 install(TARGETS ${TEST_EXECUTABLE} DESTINATION bin)
+
+# EntOS-specific L1 test executable (validates SCENESET_ENTOS_BUILD compile-time path)
+set(TEST_EXECUTABLE_ENTOS SceneSetL1TestsEntosIN)
+add_executable(${TEST_EXECUTABLE_ENTOS} ${TEST_SRC})
+target_compile_definitions(${TEST_EXECUTABLE_ENTOS} PRIVATE
+    UNIT_TEST
+    DAC_APP_CERT_PATH="/etc/rdk/certs"
+    SCENESET_ENTOS_BUILD=1
+)
+
+target_link_libraries(${TEST_EXECUTABLE_ENTOS}
+    PRIVATE
+    GTest::gtest
+    GTest::gtest_main
+    GTest::gmock
+    ${WPEFRAMEWORK_LIB_DIR}/libWPEFrameworkCore.so
+    ${WPEFRAMEWORK_LIB_DIR}/libWPEFrameworkCOM.so
+    pthread
+    systemd
+    dl
+)
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9)
+    target_link_libraries(${TEST_EXECUTABLE_ENTOS} PRIVATE stdc++fs)
+endif()
+
+if(TARGET ralf-utils::libralf)
+    target_link_libraries(${TEST_EXECUTABLE_ENTOS} PRIVATE ralf-utils::libralf)
+elseif(TARGET libralf)
+    target_link_libraries(${TEST_EXECUTABLE_ENTOS} PRIVATE libralf)
+elseif(TARGET ralf-utils::libralf-static)
+    target_link_libraries(${TEST_EXECUTABLE_ENTOS} PRIVATE ralf-utils::libralf-static)
+elseif(TARGET libralf-static)
+    target_link_libraries(${TEST_EXECUTABLE_ENTOS} PRIVATE libralf-static)
+else()
+    message(FATAL_ERROR "libralf package found but no usable CMake target exported (expected ralf-utils::libralf, libralf, ralf-utils::libralf-static, or libralf-static)")
+endif()
+
+target_include_directories(${TEST_EXECUTABLE_ENTOS}
+    PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src
+    ${GTEST_INCLUDE_DIRS}
+    ${WPEFRAMEWORK_INCLUDE_DIR}
+    ${WPEFRAMEWORK_INCLUDE_DIR}/WPEFramework
+)
+
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    target_compile_options(${TEST_EXECUTABLE_ENTOS}
+        PRIVATE
+        --coverage
+        -fprofile-arcs
+        -ftest-coverage
+        -g
+        -O0
+    )
+    target_link_options(${TEST_EXECUTABLE_ENTOS}
+        PRIVATE
+        --coverage
+    )
+endif()
+
+install(TARGETS ${TEST_EXECUTABLE_ENTOS} DESTINATION bin)
