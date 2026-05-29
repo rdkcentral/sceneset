@@ -59,6 +59,10 @@
 #define SCENESET_DEBUG_BUILD 0
 #endif
 
+#ifndef SCENESET_ENTOS_BUILD
+#define SCENESET_ENTOS_BUILD 0
+#endif
+
 #define SCENESET_CONFIG_FILE "/opt/sceneset_app.conf"
 #define SCENESET_SYSTEM_CONFIG_FILE "/etc/sceneset.conf"
 #define SCENESET_OVERRIDE_CONFIG_FILE "/opt/sceneset.conf"
@@ -1024,11 +1028,18 @@ void SceneSetApp::AppManagerEventHandler::OnAppLifecycleStateChanged(const strin
                 instance.m_pendingRestart = false;
                 instance.startLaunchThread();
             }
-            // Handle ABORT error case for crash restart (only if not pending restart from new version)
-            else if (oldState == Exchange::IAppManager::AppLifecycleState::APP_STATE_TERMINATING &&
-                     errorReason == Exchange::IAppManager::AppErrorReason::APP_ERROR_ABORT) {
-                std::cout << "App " << appId << " terminated with ABORT error. Restarting reference app." << std::endl;
+            else if (oldState == Exchange::IAppManager::AppLifecycleState::APP_STATE_TERMINATING) {
+#if SCENESET_ENTOS_BUILD
+                // ENTOS build behavior: restart on any TERMINATING->UNLOADED transition.
+                std::cout << "App " << appId << " terminated. Restarting home app for entos." << std::endl;
                 instance.startLaunchThread();
+#else
+                // Default behavior: restart only for ABORT terminations.
+                if (errorReason == Exchange::IAppManager::AppErrorReason::APP_ERROR_ABORT) {
+                    std::cout << "App " << appId << " terminated with ABORT error. Restarting reference app." << std::endl;
+                    instance.startLaunchThread();
+                }
+#endif
             }
         } else if (newState == Exchange::IAppManager::AppLifecycleState::APP_STATE_TERMINATING) {
             instance.m_appLaunched = false;

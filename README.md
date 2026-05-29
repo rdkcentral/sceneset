@@ -71,6 +71,7 @@ The project uses CMake for building.
 | `FACTORY_APP_PATH` | empty/unset | Path to factory app bundles copied on first boot when explicitly provided by the build |
 | `APP_PREINSTALL_DIRECTORY` | empty/unset | Fallback preinstall directory when explicitly provided by the build (also resolved dynamically from the PreinstallManager plugin config key `appPreinstallDirectory`) |
 | `DAC_APP_CERT_PATH` | `/etc/rdk/certs` | Directory containing DAC certificates for RALF package verification |
+| `SCENESET_ENTOS_BUILD` | `OFF` | Enables ENTOS-specific behavior. When `ON`, reference app restarts for `TERMINATING` to `UNLOADED` transitions (not only `APP_ERROR_ABORT`) |
 | `DISABLE_REFERENCE_APP_UPDATE` | `OFF` | Set to `ON` to disable download monitoring and OTA update support |
 
 > **Note:** If `FACTORY_APP_PATH` is set, `APP_PREINSTALL_DIRECTORY` must also be set.
