@@ -91,8 +91,9 @@ if(DISABLE_REFERENCE_APP_UPDATE)
     message(WARNING "Reference app update will be disabled, SceneSet will not update the reference app")
 endif()
 
-set(SCENESET_DEBUG_BUILD OFF CACHE BOOL "Enable debug-only /opt/sceneset.conf override of /etc/sceneset.conf")
-set(SCENESET_ENTOS_BUILD OFF CACHE BOOL "Enable ENTOS-specific SceneSet behavior")
+set(ENABLE_SYSTEM_CONFIG OFF CACHE BOOL "Enable reading system config from /etc/sceneset.conf")
+set(ENABLE_CONFIG_OVERRIDE OFF CACHE BOOL "Enable optional /opt/sceneset.conf override on top of /etc/sceneset.conf")
+set(RESTART_HOMEAPP_ALWAYS OFF CACHE BOOL "Restart reference app on every TERMINATING to UNLOADED transition")
 
 include(GNUInstallDirs)
 target_include_directories(${TARGET} PRIVATE ${COMMON_INCLUDE_DIRS})
@@ -131,8 +132,9 @@ target_compile_definitions(${TARGET} PRIVATE
     FACTORY_APP_PATH="${FACTORY_APP_PATH}"
     APP_PREINSTALL_DIRECTORY="${APP_PREINSTALL_DIRECTORY}"
     DAC_APP_CERT_PATH="${DAC_APP_CERT_PATH}"
-    SCENESET_DEBUG_BUILD=$<BOOL:${SCENESET_DEBUG_BUILD}>
-    SCENESET_ENTOS_BUILD=$<BOOL:${SCENESET_ENTOS_BUILD}>
+    ENABLE_SYSTEM_CONFIG=$<BOOL:${ENABLE_SYSTEM_CONFIG}>
+    ENABLE_CONFIG_OVERRIDE=$<BOOL:${ENABLE_CONFIG_OVERRIDE}>
+    RESTART_HOMEAPP_ALWAYS=$<BOOL:${RESTART_HOMEAPP_ALWAYS}>
     DISABLE_REFERENCE_APP_UPDATE=$<BOOL:${DISABLE_REFERENCE_APP_UPDATE}>
     GIT_SHORT_SHA="${GIT_SHORT_SHA}"
 )

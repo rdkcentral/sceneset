@@ -7,7 +7,7 @@
 
 ### Runtime Precedence
 1. Base config: /etc/sceneset.conf
-2. Debug-only override: /opt/sceneset.conf (applied only when SCENESET_DEBUG_BUILD is enabled)
+2. Optional override: /opt/sceneset.conf (applied only when ENABLE_CONFIG_OVERRIDE is enabled)
 3. Legacy fallback for home app selection when defaultHomeApp is unavailable:
   - /opt/sceneset_app.conf first line
   - compile-time SCENESET_DEFAULT_APPNAME

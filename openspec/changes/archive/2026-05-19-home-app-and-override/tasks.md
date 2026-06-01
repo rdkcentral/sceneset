@@ -2,7 +2,7 @@
 
 - [x] 1.1 Add runtime loading for `/etc/sceneset.conf` in SceneSet startup config resolution
 - [x] 1.2 Parse and validate `defaultHomeApp` from `/etc/sceneset.conf` using existing accepted config value semantics
-- [x] 1.3 Implement debug-build gating so `/opt` override is evaluated only when `SCENESET_DEBUG_BUILD` is enabled
+- [x] 1.3 Implement compile-flag gating so `/opt` override is evaluated only when `ENABLE_CONFIG_OVERRIDE` is enabled
 - [x] 1.4 Implement key-level overlay merge where `/opt` overrides matching keys from `/etc` and preserves non-overridden `/etc` keys
 - [x] 1.5 Ensure missing or unreadable `/etc/sceneset.conf` is non-fatal and falls back to current behavior
 

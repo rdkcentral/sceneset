@@ -8,7 +8,7 @@ For EntOS, SceneSet needs a deterministic and externally configurable source for
 - Scope `/etc/sceneset.conf` behavior to EntOS integration and keep existing non-EntOS behavior unchanged.
 - Introduce `defaultHomeApp` configuration, where EntOS should set this to the EPG appId.
 - Update initial SceneSet startup behavior to only load and launch the configured default home app.
-- If `SCENESET_DEBUG_BUILD` is enabled and an optional `/opt` config file exists, apply it as an override layer on top of `/etc/sceneset.conf`.
+- If `ENABLE_CONFIG_OVERRIDE` is enabled and an optional `/opt` config file exists, apply it as an override layer on top of `/etc/sceneset.conf`.
 - Ensure override behavior is key-based merge semantics: `/etc` config provides the base, and only keys present in `/opt` replace corresponding base values; all other `/etc` values remain unchanged.
 - Accept all valid config values in override files using the same parsing/validation rules as `/etc/sceneset.conf`.
 - If `/etc/sceneset.conf` is not present, fall back to current default behavior so existing functionality is not broken.

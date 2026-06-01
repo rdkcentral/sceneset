@@ -25,10 +25,10 @@ If the file is absent, unreadable, or empty, the compile-time default (`SCENESET
 |---|---|
 | Path | `/etc/sceneset.conf` |
 | Format | `key=value` lines; `defaultHomeApp=<app-id>` |
-| Priority | Highest for final reference app selection when non-empty, only in EntOS builds |
+| Priority | Highest for final reference app selection when non-empty, when system-config feature is enabled |
 
-When built with `SCENESET_ENTOS_BUILD=ON`, if `/etc/sceneset.conf` exists and contains a non-empty `defaultHomeApp`, SceneSet uses that value as the final reference app ID.  
-When `SCENESET_ENTOS_BUILD=OFF`, `defaultHomeApp` is ignored and SceneSet keeps the previously resolved reference app ID from `/opt/sceneset_app.conf` or `SCENESET_DEFAULT_APPNAME`.
+When built with `ENABLE_SYSTEM_CONFIG=ON`, if `/etc/sceneset.conf` exists and contains a non-empty `defaultHomeApp`, SceneSet uses that value as the final reference app ID.  
+When `ENABLE_SYSTEM_CONFIG=OFF`, `defaultHomeApp` is ignored and SceneSet keeps the previously resolved reference app ID from `/opt/sceneset_app.conf` or `SCENESET_DEFAULT_APPNAME`.
 
 ### 1.2 Runtime Config File — `preinstallLocation`
 
@@ -80,8 +80,9 @@ For preinstall directory selection, dynamic `appPreinstallDirectory` is used onl
 | `FACTORY_APP_PATH` | `""` | Source directory for factory app bundles copied on the first boot |
 | `APP_PREINSTALL_DIRECTORY` | `""` | Fallback preinstall directory if dynamic resolution fails |
 | `DAC_APP_CERT_PATH` | `/etc/rdk/certs` | Directory containing DAC certificates used for RALF package verification |
-| `SCENESET_DEBUG_BUILD` | `OFF` | Enables debug-only `/opt/sceneset.conf` override of `/etc/sceneset.conf` while loading system config |
-| `SCENESET_ENTOS_BUILD` | `OFF` | Enables EntOS-specific behavior, including non-ABORT restart on `TERMINATING` → `UNLOADED` and honoring `defaultHomeApp` from system config |
+| `ENABLE_SYSTEM_CONFIG` | `OFF` | Enables reading `/etc/sceneset.conf` for system config values, including `defaultHomeApp` and `preinstallLocation` |
+| `ENABLE_CONFIG_OVERRIDE` | `OFF` | Enables optional `/opt/sceneset.conf` key-level overlay on top of `/etc/sceneset.conf` when system config is enabled |
+| `RESTART_HOMEAPP_ALWAYS` | `OFF` | Enables restart behavior on every `TERMINATING` → `UNLOADED` transition (instead of only `APP_ERROR_ABORT`) |
 | `DISABLE_REFERENCE_APP_UPDATE` | `OFF` | Set to `ON` to compile out all download monitoring and OTA update support |
 
 **CMake constraints:**
@@ -110,7 +111,7 @@ referenceAppId resolution:
         │ not found/empty
         ▼
   SCENESET_DEFAULT_APPNAME (compile-time)
-                        │ then if SCENESET_ENTOS_BUILD=ON and non-empty defaultHomeApp exists
+                        │ then if ENABLE_SYSTEM_CONFIG=ON and non-empty defaultHomeApp exists
                         ▼
       /etc/sceneset.conf → defaultHomeApp (overrides final referenceAppId)
 

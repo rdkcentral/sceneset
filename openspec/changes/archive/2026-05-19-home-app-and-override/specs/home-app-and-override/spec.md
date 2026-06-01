@@ -8,7 +8,7 @@ SceneSet SHALL resolve home app configuration for EntOS by loading `/etc/scenese
 - **THEN** SceneSet uses values from `/etc/sceneset.conf` as the base runtime configuration
 
 #### Scenario: Debug override overlays matching keys
-- **WHEN** `SCENESET_DEBUG_BUILD` is enabled and the optional `/opt` override file is present with a subset of keys
+- **WHEN** `ENABLE_CONFIG_OVERRIDE` is enabled and the optional `/opt` override file is present with a subset of keys
 - **THEN** SceneSet replaces only matching keys from the base `/etc` configuration and preserves all other base keys
 
 #### Scenario: Missing /etc config preserves compatibility

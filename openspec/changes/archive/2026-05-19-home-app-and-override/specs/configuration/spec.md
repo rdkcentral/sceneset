@@ -12,12 +12,12 @@ For EntOS integration, SceneSet SHALL read `defaultHomeApp` from `/etc/sceneset.
 - **THEN** SceneSet preserves existing behavior and does not fail startup solely due to this condition
 
 ### Requirement: Debug-only override precedence
-SceneSet SHALL apply optional `/opt` configuration as a key-level override over `/etc/sceneset.conf` only when compiled with `SCENESET_DEBUG_BUILD`.
+SceneSet SHALL apply optional `/opt` configuration as a key-level override over `/etc/sceneset.conf` only when compiled with `ENABLE_CONFIG_OVERRIDE`.
 
 #### Scenario: Debug build with override file present
-- **WHEN** `SCENESET_DEBUG_BUILD` is enabled and the `/opt` override file exists with key `b` set
+- **WHEN** `ENABLE_CONFIG_OVERRIDE` is enabled and the `/opt` override file exists with key `b` set
 - **THEN** the resolved configuration value for key `b` is the `/opt` value and non-overridden keys continue using `/etc` values
 
 #### Scenario: Non-debug build ignores /opt override
-- **WHEN** `SCENESET_DEBUG_BUILD` is not enabled and `/opt` override file exists
+- **WHEN** `ENABLE_CONFIG_OVERRIDE` is not enabled and `/opt` override file exists
 - **THEN** SceneSet ignores the `/opt` override file and uses base resolution behavior

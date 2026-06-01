@@ -42,6 +42,7 @@ add_executable(${TEST_EXECUTABLE} ${TEST_SRC})
 target_compile_definitions(${TEST_EXECUTABLE} PRIVATE
     UNIT_TEST
     DAC_APP_CERT_PATH="/etc/rdk/certs"
+    ENABLE_SYSTEM_CONFIG=1
 )
 
 # WPEFramework library paths
@@ -109,16 +110,17 @@ endif()
 # Install the binary
 install(TARGETS ${TEST_EXECUTABLE} DESTINATION bin)
 
-# EntOS-specific L1 test executable (validates SCENESET_ENTOS_BUILD compile-time path)
-set(TEST_EXECUTABLE_ENTOS SceneSetL1TestsEntosIN)
-add_executable(${TEST_EXECUTABLE_ENTOS} ${TEST_SRC})
-target_compile_definitions(${TEST_EXECUTABLE_ENTOS} PRIVATE
+# L1 test executable for RESTART_HOMEAPP_ALWAYS compile-time path
+set(TEST_EXECUTABLE_RESTART_ALWAYS SceneSetL1TestsRestartAlwaysIN)
+add_executable(${TEST_EXECUTABLE_RESTART_ALWAYS} ${TEST_SRC})
+target_compile_definitions(${TEST_EXECUTABLE_RESTART_ALWAYS} PRIVATE
     UNIT_TEST
     DAC_APP_CERT_PATH="/etc/rdk/certs"
-    SCENESET_ENTOS_BUILD=1
+    ENABLE_SYSTEM_CONFIG=1
+    RESTART_HOMEAPP_ALWAYS=1
 )
 
-target_link_libraries(${TEST_EXECUTABLE_ENTOS}
+target_link_libraries(${TEST_EXECUTABLE_RESTART_ALWAYS}
     PRIVATE
     GTest::gtest
     GTest::gtest_main
@@ -131,17 +133,17 @@ target_link_libraries(${TEST_EXECUTABLE_ENTOS}
 )
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9)
-    target_link_libraries(${TEST_EXECUTABLE_ENTOS} PRIVATE stdc++fs)
+    target_link_libraries(${TEST_EXECUTABLE_RESTART_ALWAYS} PRIVATE stdc++fs)
 endif()
 
 if(TARGET ralf-utils::libralf)
-    target_link_libraries(${TEST_EXECUTABLE_ENTOS} PRIVATE ralf-utils::libralf)
+    target_link_libraries(${TEST_EXECUTABLE_RESTART_ALWAYS} PRIVATE ralf-utils::libralf)
 elseif(TARGET libralf)
-    target_link_libraries(${TEST_EXECUTABLE_ENTOS} PRIVATE libralf)
+    target_link_libraries(${TEST_EXECUTABLE_RESTART_ALWAYS} PRIVATE libralf)
 elseif(TARGET ralf-utils::libralf-static)
-    target_link_libraries(${TEST_EXECUTABLE_ENTOS} PRIVATE ralf-utils::libralf-static)
+    target_link_libraries(${TEST_EXECUTABLE_RESTART_ALWAYS} PRIVATE ralf-utils::libralf-static)
 elseif(TARGET libralf-static)
-    target_link_libraries(${TEST_EXECUTABLE_ENTOS} PRIVATE libralf-static)
+    target_link_libraries(${TEST_EXECUTABLE_RESTART_ALWAYS} PRIVATE libralf-static)
 else()
     message(FATAL_ERROR "libralf package found but no usable CMake target exported (expected ralf-utils::libralf, libralf, ralf-utils::libralf-static, or libralf-static)")
 endif()

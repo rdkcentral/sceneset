@@ -34,8 +34,12 @@
 #include "SceneSet.h"
 #include "RalfPackageSupport.h"
 
-#ifndef SCENESET_DEBUG_BUILD
-#define SCENESET_DEBUG_BUILD 0
+#ifndef ENABLE_CONFIG_OVERRIDE
+#define ENABLE_CONFIG_OVERRIDE 0
+#endif
+
+#ifndef ENABLE_SYSTEM_CONFIG
+#define ENABLE_SYSTEM_CONFIG 0
 #endif
 
 namespace {
@@ -2957,7 +2961,7 @@ TEST_F(AppManagerMockEventHandlerTest, OnAppLifecycleStateChangedAbortTriggersCr
 
 // Validates compile-time lifecycle behavior for non-ABORT unloads:
 // - default build: no restart
-// - EntOS build: restart on TERMINATING -> UNLOADED
+// - RESTART_HOMEAPP_ALWAYS build: restart on TERMINATING -> UNLOADED
 TEST_F(AppManagerMockEventHandlerTest, OnAppLifecycleStateChangedNonAbortBehaviorMatchesBuildType) {
     SceneSetApp& instance = SceneSetApp::getInstance();
     const std::string& refId = SceneSetAppTestPeer::GetReferenceAppId(instance);
@@ -2967,7 +2971,7 @@ TEST_F(AppManagerMockEventHandlerTest, OnAppLifecycleStateChangedNonAbortBehavio
     SceneSetAppTestPeer::SetAppLaunched(instance, true);
     SceneSetAppTestPeer::SetPendingRestart(instance, false);
 
-#if SCENESET_ENTOS_BUILD
+#if RESTART_HOMEAPP_ALWAYS
     auto launchCalled = std::make_shared<std::promise<void>>();
     auto future = launchCalled->get_future();
     EXPECT_CALL(mockAppMgr, LaunchApp(refId, testing::_, testing::_))
@@ -2987,7 +2991,7 @@ TEST_F(AppManagerMockEventHandlerTest, OnAppLifecycleStateChangedNonAbortBehavio
     EXPECT_FALSE(SceneSetAppTestPeer::GetAppLaunched(instance));
     EXPECT_FALSE(SceneSetAppTestPeer::GetPendingRestart(instance));
 
-#if SCENESET_ENTOS_BUILD
+#if RESTART_HOMEAPP_ALWAYS
     EXPECT_EQ(future.wait_for(std::chrono::milliseconds(500)), std::future_status::ready)
         << "LaunchApp was not called within the expected timeout";
 #endif
@@ -3129,7 +3133,7 @@ TEST_F(SceneSetTest, LoadSystemConfigOverrideBehaviorMatchesBuildType) {
     ASSERT_TRUE(values.find("defaultHomeApp") != values.end());
     ASSERT_TRUE(values.find("preinstallLocation") != values.end());
 
-#if SCENESET_DEBUG_BUILD
+#if ENABLE_CONFIG_OVERRIDE
     EXPECT_EQ(values["defaultHomeApp"], "org.rdk.OverrideHome");
 #else
     EXPECT_EQ(values["defaultHomeApp"], "org.rdk.BaseHome");

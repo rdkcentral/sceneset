@@ -54,12 +54,16 @@
 #define APP_PREINSTALL_DIRECTORY ""
 #endif
 
-#ifndef SCENESET_DEBUG_BUILD
-#define SCENESET_DEBUG_BUILD 0
+#ifndef ENABLE_SYSTEM_CONFIG
+#define ENABLE_SYSTEM_CONFIG 0
 #endif
 
-#ifndef SCENESET_ENTOS_BUILD
-#define SCENESET_ENTOS_BUILD 0
+#ifndef ENABLE_CONFIG_OVERRIDE
+#define ENABLE_CONFIG_OVERRIDE 0
+#endif
+
+#ifndef RESTART_HOMEAPP_ALWAYS
+#define RESTART_HOMEAPP_ALWAYS 0
 #endif
 
 #define SCENESET_CONFIG_FILE "/opt/sceneset_app.conf"
@@ -75,7 +79,9 @@ constexpr const char* kPreinstallLocationSettingKey = "preinstallLocation";
 constexpr const char* kDefaultHomeAppSettingKey = "defaultHomeApp";
 constexpr const char* kInitialDownloadSweepEnvVar = "SCENESET_INITIAL_DOWNLOAD_SWEEP";
 constexpr const char* kSceneSetSystemConfigEnvVar = "SCENESET_SYSTEM_CONFIG_FILE";
+#if ENABLE_CONFIG_OVERRIDE
 constexpr const char* kSceneSetOverrideConfigEnvVar = "SCENESET_OVERRIDE_CONFIG_FILE";
+#endif
 constexpr const char* kPackageInstallStateInstalled = "INSTALLED";
 constexpr const char* kPackageInstallStateInstalling = "INSTALLING";
 constexpr std::chrono::milliseconds kDownloadedPackageSettleDelayMs(1000);
@@ -383,7 +389,6 @@ bool SceneSetApp::initialize() {
         const auto defaultHomeAppIt = systemConfig.find(kDefaultHomeAppSettingKey);
         if (defaultHomeAppIt != systemConfig.end())
         {
-#if SCENESET_ENTOS_BUILD
             if (!defaultHomeAppIt->second.empty())
             {
                 m_referenceAppId = defaultHomeAppIt->second;
@@ -393,7 +398,6 @@ bool SceneSetApp::initialize() {
             {
                 std::cerr << "Ignoring empty defaultHomeApp in system config" << std::endl;
             }
-#endif // SCENESET_ENTOS_BUILD 
         }
     }
 
@@ -1030,9 +1034,9 @@ void SceneSetApp::AppManagerEventHandler::OnAppLifecycleStateChanged(const strin
                 instance.startLaunchThread();
             }
             else if (oldState == Exchange::IAppManager::AppLifecycleState::APP_STATE_TERMINATING) {
-#if SCENESET_ENTOS_BUILD
-                // ENTOS build behavior: restart on any TERMINATING->UNLOADED transition.
-                std::cout << "App " << appId << " terminated. Restarting home app for entos." << std::endl;
+#if RESTART_HOMEAPP_ALWAYS
+                // Optional build behavior: restart on any TERMINATING->UNLOADED transition.
+                std::cout << "App " << appId << " terminated. Restarting reference app due to RESTART_HOMEAPP_ALWAYS." << std::endl;
                 instance.startLaunchThread();
 #else
                 // Default behavior: restart only for ABORT terminations.
@@ -1628,12 +1632,16 @@ std::string SceneSetApp::getSystemConfigPath() const {
 
 bool SceneSetApp::loadSystemConfig(std::unordered_map<std::string, std::string>& values) const {
     values.clear();
+
+#if !ENABLE_SYSTEM_CONFIG
+    return false;
+#else
     const std::string configPath = getSystemConfigPath();
     if (!parseSystemConfig(configPath, values)) {
         return false;
     }
 
-#if SCENESET_DEBUG_BUILD
+#if ENABLE_CONFIG_OVERRIDE
     std::string overrideConfigPath = SCENESET_OVERRIDE_CONFIG_FILE;
     const char* configuredOverridePath = std::getenv(kSceneSetOverrideConfigEnvVar);
     if (configuredOverridePath != nullptr && configuredOverridePath[0] != '\0') {
@@ -1645,11 +1653,12 @@ bool SceneSetApp::loadSystemConfig(std::unordered_map<std::string, std::string>&
         for (const auto& [key, value] : overrideValues) {
             values[key] = value;
         }
-        std::cout << "Applied debug override config from " << overrideConfigPath << std::endl;
+        std::cout << "Applied override config from " << overrideConfigPath << std::endl;
     }
 #endif
 
     return true;
+#endif
 }
 
 SceneSetApp::PreinstallManagerEventHandler::~PreinstallManagerEventHandler() {}

@@ -44,7 +44,7 @@ SceneSet tracks whether the reference app is currently running using an `m_appLa
 When the reference app transitions to `UNLOADED` from `TERMINATING`:
 
 - Default builds automatically restart the app only when the error reason is `APP_ERROR_ABORT`.
-- EntOS builds (`SCENESET_ENTOS_BUILD=ON`) automatically restart the app for any `TERMINATING` → `UNLOADED` transition.
+- Builds with `RESTART_HOMEAPP_ALWAYS=ON` automatically restart the app for any `TERMINATING` → `UNLOADED` transition.
 
 **Not triggered when:** the app was intentionally killed (e.g. for an OTA restart) — that case is handled by the pending-restart flag (see §5).
 

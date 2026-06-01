@@ -5,7 +5,7 @@ SceneSet currently resolves startup behavior without a mandatory external config
 Key constraints:
 - EntOS-focused behavior must not regress non-EntOS or legacy startup flows.
 - Missing `/etc/sceneset.conf` is non-fatal and should preserve existing behavior.
-- Override behavior is gated by `SCENESET_DEBUG_BUILD` and optional file presence.
+- Override behavior is gated by `ENABLE_CONFIG_OVERRIDE` and optional file presence.
 
 ## Goals / Non-Goals
 
@@ -25,7 +25,7 @@ Key constraints:
 ## Decisions
 
 1. Configuration source order and gating
-- Decision: Resolve configuration in this order: existing defaults/legacy behavior as baseline, apply `/etc/sceneset.conf` if present (EntOS path), then apply `/opt` overrides only when `SCENESET_DEBUG_BUILD` is enabled and the file exists.
+- Decision: Resolve configuration in this order: existing defaults/legacy behavior as baseline, apply `/etc/sceneset.conf` if present (system config path), then apply `/opt` overrides only when `ENABLE_CONFIG_OVERRIDE` is enabled and the file exists.
 - Rationale: This provides predictable precedence while preserving backward compatibility and keeping debug behavior isolated.
 - Alternatives considered:
   - Require `/etc/sceneset.conf` unconditionally: rejected due to compatibility risk.
