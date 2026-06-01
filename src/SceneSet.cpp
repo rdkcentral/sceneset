@@ -37,7 +37,6 @@
 #include <unistd.h>
 #include <string_view>
 #include <optional>
-#include <unordered_map>
 
 #ifndef GIT_SHORT_SHA
 #define GIT_SHORT_SHA "unknown"
