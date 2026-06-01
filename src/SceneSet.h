@@ -123,6 +123,8 @@ private:
 #ifdef UNIT_TEST
     static void setMetadataExtractorForTesting(bool (*extractor)(const std::filesystem::path&, std::string&, std::string&));
     static void resetMetadataExtractorForTesting();
+    std::string m_factoryAppsCopiedMarkerOverride;
+    std::string m_factoryAppPathOverride;
 #endif
     std::string getInstalledReferenceAppVersion() const;
     std::string getThunderAccessPath() const;

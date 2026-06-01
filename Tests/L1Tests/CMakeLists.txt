@@ -39,7 +39,10 @@ set(TEST_SRC
 
 # Create the test executable
 add_executable(${TEST_EXECUTABLE} ${TEST_SRC})
-target_compile_definitions(${TEST_EXECUTABLE} PRIVATE UNIT_TEST)
+target_compile_definitions(${TEST_EXECUTABLE} PRIVATE
+    UNIT_TEST
+    DAC_APP_CERT_PATH="/etc/rdk/certs"
+)
 
 # WPEFramework library paths
 set(WPEFRAMEWORK_LIB_DIR ${CMAKE_INSTALL_PREFIX}/lib)
@@ -47,8 +50,10 @@ set(WPEFRAMEWORK_INCLUDE_DIR ${CMAKE_INSTALL_PREFIX}/include)
 
 #Link libraries
 target_link_libraries(${TEST_EXECUTABLE}
-    ${GTEST_LIBRARIES}
-    ${GTEST_MAIN_LIBRARIES}
+    PRIVATE
+    GTest::gtest
+    GTest::gtest_main
+    GTest::gmock
     ${WPEFRAMEWORK_LIB_DIR}/libWPEFrameworkCore.so
     ${WPEFRAMEWORK_LIB_DIR}/libWPEFrameworkCOM.so
     pthread

@@ -17,14 +17,18 @@ on:
       - main
       - develop
     paths:
-      - 'SceneSet/**'
+      - 'src/**'
+      - 'Tests/**'
+      - 'CMakeLists.txt'
       - '.github/workflows/SceneSet-L1-tests.yml'
   pull_request:
     branches:
       - main
       - develop
     paths:
-      - 'SceneSet/**'
+      - 'src/**'
+      - 'Tests/**'
+      - 'CMakeLists.txt'
       - '.github/workflows/SceneSet-L1-tests.yml'
 
 env:
@@ -78,7 +82,7 @@ jobs:
       - name: Install packages
         run: |
           sudo apt update
-          sudo apt-get install -y pkg-config libglib2.0-dev libnm-dev libcurl4-openssl-dev lcov ninja-build libsystemd-dev valgrind 
+          sudo apt-get install -y pkg-config libglib2.0-dev libnm-dev libcurl4-openssl-dev lcov ninja-build libsystemd-dev valgrind libarchive-dev libxml2-dev libssl-dev liblz4-dev 
 
       - name: Configure Python
         uses: actions/setup-python@v4
@@ -89,7 +93,7 @@ jobs:
       - name: Configure CMake
         uses: jwlawson/actions-setup-cmake@v1.13
         with:
-          cmake-version: '3.16.x'
+          cmake-version: '3.25.x'
       
       - name: Checkout thunder repositories
         run: |
@@ -154,7 +158,27 @@ jobs:
           repository: rdkcentral/entservices-apis
           path: entservices-apis
           ref: ${{env.INTERFACES_REF}}
-      
+
+      - name: Checkout ralf-utils
+        uses: actions/checkout@v3
+        with:
+          repository: rdkcentral/ralf-utils
+          path: ralf-utils
+          ref: f2ef8cb017e1f960a76427a4addf86c88d7a65ec
+
+      - name: Build ralf-utils
+        run: >
+          cmake -G Ninja
+          -S "$GITHUB_WORKSPACE/ralf-utils"
+          -B build/ralf-utils
+          -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/install/usr"
+          -DRALF_UTILS_BUILD_UNIT_TESTS=OFF
+          -DRALF_UTILS_BUILD_TOOLS=OFF
+          &&
+          cmake --build build/ralf-utils -j8
+          &&
+          cmake --install build/ralf-utils     
+ 
       - name: Build googletest
         run: >
           cmake -G Ninja
@@ -177,6 +201,8 @@ jobs:
           mkdir -p $GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces
           # Copy the IAppManager.h from entservices-apis
           cp entservices-apis/apis/AppManager/IAppManager.h $GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/
+          cp entservices-apis/apis/PreinstallManager/IPreinstallManager.h $GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/
+          cp entservices-apis/apis/PackageManager/IAppPackageManager.h $GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/
           
           # Create a basic Ids.h file
           cat > $GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/Ids.h << 'EOF'
@@ -188,11 +214,30 @@ jobs:
           namespace WPEFramework {
           namespace Exchange {
 
-          // Interface IDs
+          // Interface IDs for AppManager
           enum InterfaceIds : uint32_t {
-              ID_APPMANAGER = 0x00000200,
-              ID_APPMANAGER_NOTIFICATION = 0x00000201,
-              ID_LOADED_APP_INFO_ITERATOR = 0x00000202
+              ID_APPMANAGER                      = 0x00000200,
+              ID_APPMANAGER_NOTIFICATION         = 0x00000201,
+              ID_LOADED_APP_INFO_ITERATOR        = 0x00000202,
+
+              // Interface IDs for PreinstallManager
+              ID_PREINSTALL_MANAGER              = 0x00000210,
+              ID_PREINSTALL_MANAGER_NOTIFICATION = 0x00000211,
+
+              // Interface IDs for AppPackageManager (IPackageDownloader)
+              ID_PACKAGE_DOWNLOADER              = 0x00000220,
+              ID_PACKAGE_INFO_ITERATOR           = 0x00000221,
+              ID_PACKAGE_DOWNLOADER_NOTIFICATION = 0x00000222,
+
+              // Interface IDs for AppPackageManager (IPackageInstaller)
+              ID_PACKAGE_INSTALLER               = 0x00000230,
+              ID_PACKAGE_ITERATOR                = 0x00000231,
+              ID_PACKAGE_INSTALLER_NOTIFICATION  = 0x00000232,
+              ID_PACKAGE_KEY_VALUE_ITERATOR      = 0x00000233,
+
+              // Interface IDs for AppPackageManager (IPackageHandler)
+              ID_PACKAGE_HANDLER                 = 0x00000240,
+              ID_PACKAGE_LOCK_ITERATOR           = 0x00000241
           };
 
           } // namespace Exchange
@@ -213,6 +258,7 @@ jobs:
           -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/install/usr"
           -DCMAKE_MODULE_PATH="$GITHUB_WORKSPACE/install/tools/cmake"
           -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_CXX_STANDARD=17
           &&
           cmake --build build/sceneset-l1-tests -j8
           &&

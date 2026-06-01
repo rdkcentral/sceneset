@@ -473,8 +473,14 @@ bool SceneSetApp::isReferenceAppInstalled() {
 }
 
 bool SceneSetApp::isFactoryAppsCopied() {
-    if (std::filesystem::exists(FACTORY_APPS_COPIED_MARKER)) {
-        std::cout << "Factory apps marker file exists at: " << FACTORY_APPS_COPIED_MARKER << std::endl;
+#ifdef UNIT_TEST
+    const std::string markerPath = m_factoryAppsCopiedMarkerOverride.empty()
+        ? std::string(FACTORY_APPS_COPIED_MARKER) : m_factoryAppsCopiedMarkerOverride;
+#else
+    const std::string markerPath = FACTORY_APPS_COPIED_MARKER;
+#endif
+    if (std::filesystem::exists(markerPath)) {
+        std::cout << "Factory apps marker file exists at: " << markerPath << std::endl;
         return true;
     }
     std::cout << "Factory apps marker file does not exist. This is the first boot." << std::endl;
@@ -482,26 +488,39 @@ bool SceneSetApp::isFactoryAppsCopied() {
 }
 
 void SceneSetApp::markFactoryAppsCopied() {
-    std::ofstream markerFile(FACTORY_APPS_COPIED_MARKER);
+#ifdef UNIT_TEST
+    const std::string markerPath = m_factoryAppsCopiedMarkerOverride.empty()
+        ? std::string(FACTORY_APPS_COPIED_MARKER) : m_factoryAppsCopiedMarkerOverride;
+#else
+    const std::string markerPath = FACTORY_APPS_COPIED_MARKER;
+#endif
+    std::ofstream markerFile(markerPath);
     if (markerFile.is_open()) {
         markerFile << "Factory apps copied on first boot" << std::endl;
         markerFile.close();
-        std::cout << "Factory apps marker file created at: " << FACTORY_APPS_COPIED_MARKER << std::endl;
+        std::cout << "Factory apps marker file created at: " << markerPath << std::endl;
     } else {
-        std::cerr << "Failed to create factory apps marker file at: " << FACTORY_APPS_COPIED_MARKER << std::endl;
+        std::cerr << "Failed to create factory apps marker file at: " << markerPath << std::endl;
     }
 }
 
 bool SceneSetApp::copyFactoryAppsToPreinstall() {
     namespace fs = std::filesystem;
 
-    std::cout << "Copying factory apps from " << FACTORY_APP_PATH << " to " << m_preinstallDirectory << std::endl;
+#ifdef UNIT_TEST
+    const std::string factoryAppPath = m_factoryAppPathOverride.empty()
+        ? std::string(FACTORY_APP_PATH) : m_factoryAppPathOverride;
+#else
+    const std::string factoryAppPath = FACTORY_APP_PATH;
+#endif
 
-    fs::path sourcePath(FACTORY_APP_PATH);
+    std::cout << "Copying factory apps from " << factoryAppPath << " to " << m_preinstallDirectory << std::endl;
+
+    fs::path sourcePath(factoryAppPath);
     fs::path destPath(m_preinstallDirectory);
 
     if (!fs::exists(sourcePath)) {
-        std::cerr << "Failed to open factory apps location: " << FACTORY_APP_PATH << std::endl;
+        std::cerr << "Failed to open factory apps location: " << factoryAppPath << std::endl;
         return false;
     }
 
