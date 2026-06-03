@@ -58,7 +58,7 @@
 #define FACTORY_APPS_COPIED_MARKER "/opt/persistent/.sceneset_factory_apps_copied"
 
 namespace { // begin file-private constants and helpers
-constexpr const char* kPackageManagerRdkEmsCallsign = "org.rdk.PackageManagerRDKEMS";
+constexpr const char* kAppPackageManagerCallsign = "org.rdk.AppPackageManager";
 constexpr const char* kPackageManagerDownloadDirKey = "downloadDir";
 constexpr const char* kPreinstallDirectoryKey = "appPreinstallDirectory";
 constexpr const char* kInitialDownloadSweepEnvVar = "SCENESET_INITIAL_DOWNLOAD_SWEEP";
@@ -266,9 +266,9 @@ bool SceneSetApp::initialize() {
     }
 
     std::cout << "PackageManager COMRPC client created successfully" << std::endl;
-    m_packageInstaller = packageManagerClient->Open<Exchange::IPackageInstaller>(kPackageManagerRdkEmsCallsign);
+    m_packageInstaller = packageManagerClient->Open<Exchange::IPackageInstaller>(kAppPackageManagerCallsign);
     if (m_packageInstaller == nullptr) {
-        std::cerr << "Failed to open IPackageInstaller interface for " << kPackageManagerRdkEmsCallsign << std::endl;
+        std::cerr << "Failed to open IPackageInstaller interface for " << kAppPackageManagerCallsign << std::endl;
         if (m_preinstallManager != nullptr) {
             m_preinstallManager->Release();
             m_preinstallManager = nullptr;
@@ -281,7 +281,7 @@ bool SceneSetApp::initialize() {
         return false;
     }
 
-    std::cout << "Successfully opened " << kPackageManagerRdkEmsCallsign << " installer interface" << std::endl;
+    std::cout << "Successfully opened " << kAppPackageManagerCallsign << " installer interface" << std::endl;
 
     resolveDynamicDirectories();
     if (m_preinstallDirectory.empty()) {
@@ -1483,9 +1483,9 @@ void SceneSetApp::resolveDynamicDirectories() {
     std::string downloadDir;
     std::string preinstallDir;
 
-    if (fetchPluginConfigValue(kPackageManagerRdkEmsCallsign, kPackageManagerDownloadDirKey, downloadDir)) {
+    if (fetchPluginConfigValue(kAppPackageManagerCallsign, kPackageManagerDownloadDirKey, downloadDir)) {
         m_downloadDirectory = downloadDir;
-        std::cout << "Updated downloadDir from PackageManagerRDKEMS plugin config: " << m_downloadDirectory << std::endl;
+        std::cout << "Updated downloadDir from AppPackageManager plugin config: " << m_downloadDirectory << std::endl;
     }
 
     if (fetchPluginConfigValue(m_preinstallCallsign, kPreinstallDirectoryKey, preinstallDir)) {
