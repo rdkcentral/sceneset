@@ -148,7 +148,7 @@ else()
     message(FATAL_ERROR "libralf package found but no usable CMake target exported (expected ralf-utils::libralf, libralf, ralf-utils::libralf-static, or libralf-static)")
 endif()
 
-target_include_directories(${TEST_EXECUTABLE_ENTOS}
+target_include_directories(${TEST_EXECUTABLE_RESTART_ALWAYS}
     PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../../src
@@ -158,7 +158,7 @@ target_include_directories(${TEST_EXECUTABLE_ENTOS}
 )
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    target_compile_options(${TEST_EXECUTABLE_ENTOS}
+    target_compile_options(${TEST_EXECUTABLE_RESTART_ALWAYS}
         PRIVATE
         --coverage
         -fprofile-arcs
@@ -166,10 +166,10 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
         -g
         -O0
     )
-    target_link_options(${TEST_EXECUTABLE_ENTOS}
+    target_link_options(${TEST_EXECUTABLE_RESTART_ALWAYS}
         PRIVATE
         --coverage
     )
 endif()
 
-install(TARGETS ${TEST_EXECUTABLE_ENTOS} DESTINATION bin)
+install(TARGETS ${TEST_EXECUTABLE_RESTART_ALWAYS} DESTINATION bin)
