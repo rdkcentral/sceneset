@@ -23,6 +23,7 @@ SceneSet is designed to run as a systemd service that:
 - **Reference App Update & Restart**: Detects when a new version of the reference app is installed and automatically kills and restarts it
 - **PackageInstaller Event Monitoring**: Tracks per-package installation status from `org.rdk.AppPackageManager` to confirm successful preinstall before cleaning up staged bundles
 - **Crash Recovery**: Automatically restarts the reference app on an ABORT lifecycle error
+- **Launch Telemetry Marker**: Emits `SCENESET_HOME_APP_ACTIVE` telemetry with launch timing, cumulative relaunch count, and termination nature context when the reference app reaches `ACTIVE`
 - **Signal Handling**: Graceful shutdown on SIGTERM/SIGINT signals
 - **Systemd Integration**: Reports readiness via `sd_notify` and runs as a `Type=notify` systemd service
 and·‌AppPackageManager·‌communication- **Thunder Integration**: Uses WPEFramework COMRPC for AppManager, PreinstallManager, and AppPackageManager communication
@@ -74,6 +75,7 @@ The project uses CMake for building.
 | `ENABLE_SYSTEM_CONFIG` | `OFF` | Enables reading `/etc/sceneset.conf` for system-config keys such as `defaultHomeApp` and `preinstallLocation` |
 | `ENABLE_CONFIG_OVERRIDE` | `OFF` | Enables optional `/opt/sceneset.conf` key-level override on top of `/etc/sceneset.conf` |
 | `RESTART_HOMEAPP_ALWAYS` | `OFF` | When `ON`, reference app restarts for any `TERMINATING` to `UNLOADED` transition (not only `APP_ERROR_ABORT`) |
+| `SCENESET_TELEMETRY_METRICS_SUPPORT` | `OFF` | When `ON`, enables SceneSet T2 telemetry marker emission for home-app launch/relaunch observability |
 | `DISABLE_REFERENCE_APP_UPDATE` | `OFF` | Set to `ON` to disable download monitoring and OTA update support |
 
 > **Note:** If `FACTORY_APP_PATH` is set, `APP_PREINSTALL_DIRECTORY` must also be set.
@@ -90,6 +92,18 @@ The project uses CMake for building.
 6. If preinstall succeeds, cleans up the preinstall directory; otherwise preserves files for retry on next boot
 7. Checks if the reference app is already installed and launches it
 8. Unless built with `-DDISABLE_REFERENCE_APP_UPDATE=ON`, starts a download directory monitor for OTA updates
+
+## Telemetry Marker Contract
+
+When built with `SCENESET_TELEMETRY_METRICS_SUPPORT=ON`, SceneSet initializes T2 with component name `sceneset` and emits marker `SCENESET_HOME_APP_ACTIVE` when the reference app reaches `ACTIVE`.
+
+Marker payload fields:
+- `appId`: configured reference app ID
+- `totalStartToActiveMs`: total duration from SceneSet startup to app `ACTIVE`
+- `preinstallDurationMs`: preinstall duration (`StartPreinstall` to preinstall completion path)
+- `launchToActiveMs`: duration from `LaunchApp` request to app `ACTIVE`
+- `cumulativeRelaunchCount`: process-lifetime relaunch count
+- `terminationNature`: `none`, `crash`, or `intentional_kill`
 
 ## Service Dependencies
 

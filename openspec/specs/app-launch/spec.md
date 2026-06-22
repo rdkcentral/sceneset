@@ -4,6 +4,8 @@
 
 SceneSet automatically launches a single configured reference application at boot and keeps it running. It handles the full lifecycle: initial launch after preinstall completes, crash recovery, and restart after an OTA update installs a new version.
 
+Home app launch and relaunch telemetry requirements are defined in the [SceneSet Telemetry spec](../sceneset-telemetry/spec.md).
+
 ---
 
 ## Behaviors
