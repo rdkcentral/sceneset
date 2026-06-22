@@ -92,7 +92,7 @@ constexpr const char* kSceneSetOverrideConfigEnvVar = "SCENESET_OVERRIDE_CONFIG_
 #endif
 constexpr const char* kPackageInstallStateInstalled = "INSTALLED";
 constexpr const char* kPackageInstallStateInstalling = "INSTALLING";
-constexpr const char* kSceneSetHomeAppLaunchMarker = "SCENESET_HOME_APP_ACTIVE";
+constexpr const char* kSceneSetHomeAppLaunchMarker = "ENTS_INFO_Sceneset_LaunchTime";
 constexpr std::chrono::milliseconds kDownloadedPackageSettleDelayMs(1000);
 
 using MetadataExtractor = bool (*)(const std::filesystem::path&, std::string&, std::string&);
@@ -460,6 +460,10 @@ bool SceneSetApp::initialize() {
         lock_guard<mutex> lkgd(m_lock);
         m_isActive = true;
     }
+
+#if SCENESET_TELEMETRY_METRICS_SUPPORT
+    t2_init(const_cast<char*>("sceneset"));
+#endif
 
     cout << "Registered to AppManager. Waiting for term signal via sigwait" << endl;
     return m_isActive;
@@ -1085,6 +1089,7 @@ void SceneSetApp::AppManagerEventHandler::OnAppLifecycleStateChanged(const strin
 #if RESTART_HOMEAPP_ALWAYS
                 // Optional build behavior: restart on any TERMINATING->UNLOADED transition.
                 std::cout << "App " << appId << " terminated. Restarting reference app due to RESTART_HOMEAPP_ALWAYS." << std::endl;
+                std::cout << "Termination error reason: " << static_cast<int>(errorReason) << std::endl;
                 shouldRestart = true;
 #else
                 // Default behavior: restart only for ABORT terminations.
