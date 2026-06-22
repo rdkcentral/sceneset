@@ -25,6 +25,8 @@
 #include <thread>
 #include <atomic>
 #include <csignal>
+#include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <mutex>
 #include <unordered_map>
@@ -80,6 +82,17 @@ private:
     friend class SceneSetAppTestPeer;
 #endif
 
+    enum class TerminationNature : int {
+        NONE = 0,
+        CRASH = 1,
+        INTENTIONAL_KILL = 2,
+    };
+
+#ifdef UNIT_TEST
+    std::string m_lastTelemetryMarker;
+    std::string m_lastTelemetryPayload;
+#endif
+
     std::atomic<bool> m_isActive;
     std::mutex m_lock;
     Exchange::IAppManager *m_appManager;
@@ -106,6 +119,13 @@ private:
     std::mutex m_preinstallCompletionThreadMutex;
     std::atomic<bool> m_waitingForStartupPreinstallCompletion;
     std::atomic<bool> m_startupPreinstallHasFailure;
+    std::atomic<uint64_t> m_sceneSetStartTsMs;
+    std::atomic<uint64_t> m_preinstallStartTsMs;
+    std::atomic<uint64_t> m_preinstallEndTsMs;
+    std::atomic<uint64_t> m_lastLaunchRequestTsMs;
+    std::atomic<bool> m_pendingActiveTelemetry;
+    std::atomic<uint32_t> m_cumulativeRelaunchCount;
+    std::atomic<int> m_lastTerminationNature;
 
     void stopCurrentLaunchThread();
     void startLaunchThread();
@@ -133,6 +153,14 @@ private:
     void resolveDynamicDirectories();
     std::string getSystemConfigPath() const;
     bool loadSystemConfig(std::unordered_map<std::string, std::string>& values) const;
+    void publishTelemetryMarker(const std::string& marker, const std::string& payload);
+    void publishHomeAppActiveTelemetry(uint64_t activeTimestampMs);
+    void recordSceneSetStartTimestamp();
+    void recordPreinstallStartTimestamp();
+    void recordPreinstallEndTimestamp();
+    void recordLaunchRequestTimestamp();
+    void setLastTerminationNature(TerminationNature nature);
+    static const char* toTerminationNatureString(TerminationNature nature);
 
     class AppManagerEventHandler : public Exchange::IAppManager::INotification {
     public:

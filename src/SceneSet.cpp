@@ -38,6 +38,10 @@
 #include <string_view>
 #include <optional>
 
+#if SCENESET_TELEMETRY_METRICS_SUPPORT
+#include <telemetry_busmessage_sender.h>
+#endif
+
 #ifndef GIT_SHORT_SHA
 #define GIT_SHORT_SHA "unknown"
 #endif
@@ -66,6 +70,10 @@
 #define RESTART_HOMEAPP_ALWAYS 0
 #endif
 
+#ifndef SCENESET_TELEMETRY_METRICS_SUPPORT
+#define SCENESET_TELEMETRY_METRICS_SUPPORT 0
+#endif
+
 #define SCENESET_CONFIG_FILE "/opt/sceneset_app.conf"
 #define SCENESET_SYSTEM_CONFIG_FILE "/etc/sceneset.conf"
 #define SCENESET_OVERRIDE_CONFIG_FILE "/opt/sceneset.conf"
@@ -84,10 +92,16 @@ constexpr const char* kSceneSetOverrideConfigEnvVar = "SCENESET_OVERRIDE_CONFIG_
 #endif
 constexpr const char* kPackageInstallStateInstalled = "INSTALLED";
 constexpr const char* kPackageInstallStateInstalling = "INSTALLING";
+constexpr const char* kSceneSetHomeAppLaunchMarker = "SCENESET_HOME_APP_ACTIVE";
 constexpr std::chrono::milliseconds kDownloadedPackageSettleDelayMs(1000);
 
 using MetadataExtractor = bool (*)(const std::filesystem::path&, std::string&, std::string&);
 MetadataExtractor g_metadataExtractor = &ralf_support::ExtractPackageMetadata;
+
+uint64_t monotonicTimestampMs() {
+    return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
+}
 
 bool flushFileData(const std::filesystem::path& filePath) {
     int openFlags = O_RDONLY | O_CLOEXEC;
@@ -234,7 +248,7 @@ static std::string getDefaultAppName() {
 }
 
 SceneSetApp::SceneSetApp()
-    : m_isActive(false), m_lock(), m_appManager(nullptr), m_preinstallManager(nullptr), m_packageInstaller(nullptr), m_appManagerEventHandler(nullptr), m_preinstallManagerEventHandler(nullptr), m_packageInstallerEventHandler(nullptr), m_appmgrCallsign("org.rdk.AppManager"), m_preinstallCallsign("org.rdk.PreinstallManager"), m_referenceAppId(getDefaultAppName()), m_comrpcPath("/tmp/communicator"), m_downloadDirectory(""), m_preinstallDirectory(APP_PREINSTALL_DIRECTORY), m_launchThread(nullptr), m_stopLaunchThread(false), m_appLaunched(false), m_pendingRestart(false), m_launchThreadMutex(), m_downloadMonitorThread(nullptr), m_stopDownloadMonitorThread(false), m_downloadMonitorMutex(), m_preinstallCompletionThread(nullptr), m_preinstallCompletionThreadMutex(), m_waitingForStartupPreinstallCompletion(false), m_startupPreinstallHasFailure(false) {
+    : m_isActive(false), m_lock(), m_appManager(nullptr), m_preinstallManager(nullptr), m_packageInstaller(nullptr), m_appManagerEventHandler(nullptr), m_preinstallManagerEventHandler(nullptr), m_packageInstallerEventHandler(nullptr), m_appmgrCallsign("org.rdk.AppManager"), m_preinstallCallsign("org.rdk.PreinstallManager"), m_referenceAppId(getDefaultAppName()), m_comrpcPath("/tmp/communicator"), m_downloadDirectory(""), m_preinstallDirectory(APP_PREINSTALL_DIRECTORY), m_launchThread(nullptr), m_stopLaunchThread(false), m_appLaunched(false), m_pendingRestart(false), m_launchThreadMutex(), m_downloadMonitorThread(nullptr), m_stopDownloadMonitorThread(false), m_downloadMonitorMutex(), m_preinstallCompletionThread(nullptr), m_preinstallCompletionThreadMutex(), m_waitingForStartupPreinstallCompletion(false), m_startupPreinstallHasFailure(false), m_sceneSetStartTsMs(monotonicTimestampMs()), m_preinstallStartTsMs(0), m_preinstallEndTsMs(0), m_lastLaunchRequestTsMs(0), m_pendingActiveTelemetry(false), m_cumulativeRelaunchCount(0), m_lastTerminationNature(static_cast<int>(TerminationNature::NONE)) {
 }
 
 SceneSetApp::~SceneSetApp() {
@@ -250,6 +264,18 @@ SceneSetApp::~SceneSetApp() {
 }
 
 bool SceneSetApp::initialize() {
+    recordSceneSetStartTimestamp();
+    m_preinstallStartTsMs = 0;
+    m_preinstallEndTsMs = 0;
+    m_lastLaunchRequestTsMs = 0;
+    m_pendingActiveTelemetry = false;
+    m_cumulativeRelaunchCount = 0;
+    m_lastTerminationNature = static_cast<int>(TerminationNature::NONE);
+#ifdef UNIT_TEST
+    m_lastTelemetryMarker.clear();
+    m_lastTelemetryPayload.clear();
+#endif
+
     // Block termination signals for this thread before initialization work;
     // new threads inherit this mask and waitForTermSignal() consumes via sigwait().
     // Save the old mask so we can restore it on early failure returns.
@@ -529,8 +555,10 @@ bool SceneSetApp::launchDefaultApp() {
     Core::hresult result = m_appManager->LaunchApp(m_referenceAppId, "", "");
     if (result != Core::ERROR_NONE) {
         std::cerr << "LaunchApp failed with error code: " << result << std::endl;
+        m_pendingActiveTelemetry = false;
         return false;
     }
+    recordLaunchRequestTimestamp();
     return true;
 }
 
@@ -556,6 +584,7 @@ bool SceneSetApp::startPreinstall(bool forceInstall) {
         std::cerr << "PreinstallManager is not initialized, cannot start preinstall." << std::endl;
         return false;
     }
+    recordPreinstallStartTimestamp();
     std::cout << "Starting preinstall with forceInstall=" << (forceInstall ? "true" : "false") << std::endl;
     Core::hresult result = m_preinstallManager->StartPreinstall(forceInstall);
     if (result != Core::ERROR_NONE) {
@@ -754,6 +783,8 @@ void SceneSetApp::completeStartupAfterPreinstall() {
         std::cout << "Preinstall phase finished after shutdown started. Skipping remaining startup work." << std::endl;
         return;
     }
+
+    recordPreinstallEndTimestamp();
 
     std::cout << "Preinstall phase finished. Continuing startup flow." << std::endl;
     if (isStartupPreinstallSucceed()) {
@@ -1024,27 +1055,49 @@ void SceneSetApp::AppManagerEventHandler::OnAppLifecycleStateChanged(const strin
         if (newState == Exchange::IAppManager::AppLifecycleState::APP_STATE_RUNNING ||
             newState == Exchange::IAppManager::AppLifecycleState::APP_STATE_ACTIVE) {
             instance.m_appLaunched = true;
+            if (newState == Exchange::IAppManager::AppLifecycleState::APP_STATE_ACTIVE) {
+                const bool shouldPublishTelemetry = instance.m_pendingActiveTelemetry.exchange(false);
+                if (shouldPublishTelemetry) {
+                    instance.publishHomeAppActiveTelemetry(monotonicTimestampMs());
+                }
+            }
         } else if (newState == Exchange::IAppManager::AppLifecycleState::APP_STATE_UNLOADED) {
             instance.m_appLaunched = false;
+
+            bool shouldRestart = false;
+            if (oldState == Exchange::IAppManager::AppLifecycleState::APP_STATE_TERMINATING) {
+                if (instance.m_pendingRestart) {
+                    instance.setLastTerminationNature(TerminationNature::INTENTIONAL_KILL);
+                } else if (errorReason == Exchange::IAppManager::AppErrorReason::APP_ERROR_ABORT) {
+                    instance.setLastTerminationNature(TerminationNature::CRASH);
+                } else {
+                    instance.setLastTerminationNature(TerminationNature::INTENTIONAL_KILL);
+                }
+            }
 
             // Check if we need to restart after new version installation
             if (instance.m_pendingRestart) {
                 std::cout << "App reached UNLOADED state after new version installation. Restarting with new version." << std::endl;
                 instance.m_pendingRestart = false;
-                instance.startLaunchThread();
+                shouldRestart = true;
             }
             else if (oldState == Exchange::IAppManager::AppLifecycleState::APP_STATE_TERMINATING) {
 #if RESTART_HOMEAPP_ALWAYS
                 // Optional build behavior: restart on any TERMINATING->UNLOADED transition.
                 std::cout << "App " << appId << " terminated. Restarting reference app due to RESTART_HOMEAPP_ALWAYS." << std::endl;
-                instance.startLaunchThread();
+                shouldRestart = true;
 #else
                 // Default behavior: restart only for ABORT terminations.
                 if (errorReason == Exchange::IAppManager::AppErrorReason::APP_ERROR_ABORT) {
                     std::cout << "App " << appId << " terminated with ABORT error. Restarting reference app." << std::endl;
-                    instance.startLaunchThread();
+                    shouldRestart = true;
                 }
 #endif
+            }
+
+            if (shouldRestart) {
+                instance.m_cumulativeRelaunchCount.fetch_add(1);
+                instance.startLaunchThread();
             }
         } else if (newState == Exchange::IAppManager::AppLifecycleState::APP_STATE_TERMINATING) {
             instance.m_appLaunched = false;
@@ -1658,6 +1711,90 @@ bool SceneSetApp::loadSystemConfig(std::unordered_map<std::string, std::string>&
 #endif
 
     return true;
+#endif
+}
+
+void SceneSetApp::recordSceneSetStartTimestamp() {
+    m_sceneSetStartTsMs = monotonicTimestampMs();
+}
+
+void SceneSetApp::recordPreinstallStartTimestamp() {
+    m_preinstallStartTsMs = monotonicTimestampMs();
+}
+
+void SceneSetApp::recordPreinstallEndTimestamp() {
+    m_preinstallEndTsMs = monotonicTimestampMs();
+}
+
+void SceneSetApp::recordLaunchRequestTimestamp() {
+    m_lastLaunchRequestTsMs = monotonicTimestampMs();
+    m_pendingActiveTelemetry = true;
+}
+
+void SceneSetApp::setLastTerminationNature(TerminationNature nature) {
+    m_lastTerminationNature = static_cast<int>(nature);
+}
+
+const char* SceneSetApp::toTerminationNatureString(TerminationNature nature) {
+    switch (nature) {
+    case TerminationNature::CRASH:
+        return "crash";
+    case TerminationNature::INTENTIONAL_KILL:
+        return "intentional_kill";
+    case TerminationNature::NONE:
+    default:
+        return "none";
+    }
+}
+
+void SceneSetApp::publishHomeAppActiveTelemetry(uint64_t activeTimestampMs) {
+    const uint64_t sceneSetStartTsMs = m_sceneSetStartTsMs.load();
+    const uint64_t preinstallStartTsMs = m_preinstallStartTsMs.load();
+    const uint64_t preinstallEndTsMs = m_preinstallEndTsMs.load();
+    const uint64_t launchRequestTsMs = m_lastLaunchRequestTsMs.load();
+
+    const uint64_t totalStartToActiveMs =
+        (sceneSetStartTsMs > 0 && activeTimestampMs >= sceneSetStartTsMs)
+            ? (activeTimestampMs - sceneSetStartTsMs)
+            : 0;
+    const uint64_t preinstallDurationMs =
+        (preinstallStartTsMs > 0 && preinstallEndTsMs >= preinstallStartTsMs)
+            ? (preinstallEndTsMs - preinstallStartTsMs)
+            : 0;
+    const uint64_t launchToActiveMs =
+        (launchRequestTsMs > 0 && activeTimestampMs >= launchRequestTsMs)
+            ? (activeTimestampMs - launchRequestTsMs)
+            : 0;
+
+    const TerminationNature terminationNature = static_cast<TerminationNature>(m_lastTerminationNature.load());
+
+    JsonObject telemetryPayload;
+    telemetryPayload["appId"] = m_referenceAppId;
+    telemetryPayload["totalStartToActiveMs"] = static_cast<uint32_t>(totalStartToActiveMs);
+    telemetryPayload["preinstallDurationMs"] = static_cast<uint32_t>(preinstallDurationMs);
+    telemetryPayload["launchToActiveMs"] = static_cast<uint32_t>(launchToActiveMs);
+    telemetryPayload["cumulativeRelaunchCount"] = m_cumulativeRelaunchCount.load();
+    telemetryPayload["terminationNature"] = toTerminationNatureString(terminationNature);
+
+    std::string payload;
+    telemetryPayload.ToString(payload);
+    if (!payload.empty()) {
+        publishTelemetryMarker(kSceneSetHomeAppLaunchMarker, payload);
+    }
+}
+
+void SceneSetApp::publishTelemetryMarker(const std::string& marker, const std::string& payload) {
+#ifdef UNIT_TEST
+    std::lock_guard<std::mutex> lock(m_lock);
+    m_lastTelemetryMarker = marker;
+    m_lastTelemetryPayload = payload;
+#endif
+
+#if SCENESET_TELEMETRY_METRICS_SUPPORT
+    t2_event_s(const_cast<char*>(marker.c_str()), const_cast<char*>(payload.c_str()));
+#else
+    (void)marker;
+    (void)payload;
 #endif
 }
 
