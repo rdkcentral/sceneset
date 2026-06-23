@@ -23,7 +23,7 @@ SceneSet is designed to run as a systemd service that:
 - **Reference App Update & Restart**: Detects when a new version of the reference app is installed and automatically kills and restarts it
 - **PackageInstaller Event Monitoring**: Tracks per-package installation status from `org.rdk.AppPackageManager` to confirm successful preinstall before cleaning up staged bundles
 - **Crash Recovery**: Automatically restarts the reference app on an ABORT lifecycle error
-- **Launch Telemetry Marker**: Emits `SCENESET_HOME_APP_ACTIVE` telemetry with launch timing, cumulative relaunch count, and termination nature context when the reference app reaches `ACTIVE`
+- **Launch Telemetry Marker**: Emits `ENTS_INFO_Sceneset_LaunchTime` telemetry with launch timing, cumulative relaunch count, and termination nature context when the reference app reaches `ACTIVE`
 - **Signal Handling**: Graceful shutdown on SIGTERM/SIGINT signals
 - **Systemd Integration**: Reports readiness via `sd_notify` and runs as a `Type=notify` systemd service
 and·‌AppPackageManager·‌communication- **Thunder Integration**: Uses WPEFramework COMRPC for AppManager, PreinstallManager, and AppPackageManager communication
@@ -95,7 +95,7 @@ The project uses CMake for building.
 
 ## Telemetry Marker Contract
 
-When built with `SCENESET_TELEMETRY_METRICS_SUPPORT=ON`, SceneSet initializes T2 with component name `sceneset` and emits marker `SCENESET_HOME_APP_ACTIVE` when the reference app reaches `ACTIVE`.
+When built with `SCENESET_TELEMETRY_METRICS_SUPPORT=ON`, SceneSet initializes T2 with component name `sceneset` and emits marker `ENTS_INFO_Sceneset_LaunchTime` when the reference app reaches `ACTIVE`.
 
 Marker payload fields:
 - `appId`: configured reference app ID

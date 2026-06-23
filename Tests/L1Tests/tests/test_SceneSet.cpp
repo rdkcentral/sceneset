@@ -2125,7 +2125,7 @@ TEST_F(AppManagerEventHandlerTest, OnActivePublishesTelemetryPayloadWithTimingAn
         static_cast<Exchange::IAppManager::AppErrorReason>(0));
 
     EXPECT_TRUE(SceneSetAppTestPeer::GetAppLaunched(instance));
-    EXPECT_EQ(SceneSetAppTestPeer::GetLastTelemetryMarker(instance), "SCENESET_HOME_APP_ACTIVE");
+    EXPECT_EQ(SceneSetAppTestPeer::GetLastTelemetryMarker(instance), "ENTS_INFO_Sceneset_LaunchTime");
 
     const std::string payload = SceneSetAppTestPeer::GetLastTelemetryPayload(instance);
     EXPECT_FALSE(payload.empty());

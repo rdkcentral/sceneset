@@ -11,7 +11,7 @@ SceneSet emits a telemetry marker when the configured home app reaches `ACTIVE`.
 ### 1. Marker Identity
 
 - SceneSet uses T2 component name `sceneset`.
-- SceneSet publishes marker `SCENESET_HOME_APP_ACTIVE` for successful home-app `ACTIVE` transitions.
+- SceneSet publishes marker `ENTS_INFO_Sceneset_LaunchTime` for successful home-app `ACTIVE` transitions.
 - SceneSet does not publish this marker before the app reaches `ACTIVE`.
 
 ---
