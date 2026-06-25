@@ -1772,14 +1772,23 @@ void SceneSetApp::publishHomeAppActiveTelemetry(uint64_t activeTimestampMs) {
             : 0;
 
     const TerminationNature terminationNature = static_cast<TerminationNature>(m_lastTerminationNature.load());
+    const uint32_t cumulativeRelaunchCount = m_cumulativeRelaunchCount.load();
+    const bool isInitialLaunchTelemetry =
+        (cumulativeRelaunchCount == 0 && terminationNature == TerminationNature::NONE);
 
     JsonObject telemetryPayload;
     telemetryPayload["appId"] = m_referenceAppId;
-    telemetryPayload["totalStartToActiveMs"] = static_cast<uint32_t>(totalStartToActiveMs);
-    telemetryPayload["preinstallDurationMs"] = static_cast<uint32_t>(preinstallDurationMs);
     telemetryPayload["launchToActiveMs"] = static_cast<uint32_t>(launchToActiveMs);
-    telemetryPayload["cumulativeRelaunchCount"] = m_cumulativeRelaunchCount.load();
-    telemetryPayload["terminationNature"] = toTerminationNatureString(terminationNature);
+    // Keep cold-start timing metrics only on the first successful ACTIVE transition.
+    // This avoids reusing startup/preinstall timings for later app restarts.
+    if (isInitialLaunchTelemetry) {
+        telemetryPayload["totalStartToActiveMs"] = static_cast<uint32_t>(totalStartToActiveMs);
+        telemetryPayload["preinstallDurationMs"] = static_cast<uint32_t>(preinstallDurationMs);
+    } else {
+        // For relaunches, report only restart context fields and per-launch ACTIVE timing.
+        telemetryPayload["cumulativeRelaunchCount"] = cumulativeRelaunchCount;
+        telemetryPayload["terminationNature"] = toTerminationNatureString(terminationNature);
+    }
 
     std::string payload;
     telemetryPayload.ToString(payload);

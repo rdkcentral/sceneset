@@ -18,21 +18,27 @@ SceneSet emits a telemetry marker when the configured home app reaches `ACTIVE`.
 
 ### 2. Timing Fields
 
-For each published marker, SceneSet includes:
+For the first published marker in a SceneSet process lifetime (initial boot launch), SceneSet includes:
 
 - `totalStartToActiveMs`: time from SceneSet startup to home app `ACTIVE`.
 - `preinstallDurationMs`: time from preinstall start to preinstall completion path.
+- `launchToActiveMs`: time from home app launch request to home app `ACTIVE`.
+
+For subsequent relaunch markers in the same SceneSet process lifetime, SceneSet includes only:
+
 - `launchToActiveMs`: time from home app launch request to home app `ACTIVE`.
 
 ---
 
 ### 3. Relaunch Context Fields
 
-For each published marker, SceneSet includes:
+For relaunch markers only, SceneSet includes:
 
 - `appId`: configured reference app ID.
 - `cumulativeRelaunchCount`: relaunch count accumulated during the current SceneSet process lifetime.
 - `terminationNature`: one of `none` (no prior termination context), `crash`, `intentional_kill`.
+
+For the first published marker in a SceneSet process lifetime (initial boot launch), SceneSet omits `cumulativeRelaunchCount` and `terminationNature`.
 
 ---
 

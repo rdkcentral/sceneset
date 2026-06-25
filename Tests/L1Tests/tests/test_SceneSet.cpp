@@ -2099,7 +2099,7 @@ TEST_F(AppManagerEventHandlerTest, OnAppLifecycleStateChangedTriggersCrashRestar
     EXPECT_FALSE(SceneSetAppTestPeer::GetPendingRestart(instance));
 }
 
-TEST_F(AppManagerEventHandlerTest, OnActivePublishesTelemetryPayloadWithTimingAndRetryFields) {
+TEST_F(AppManagerEventHandlerTest, OnActivePublishesInitialLaunchTelemetryWithoutRelaunchContextFields) {
     SceneSetApp& instance = SceneSetApp::getInstance();
     const std::string& refId = SceneSetAppTestPeer::GetReferenceAppId(instance);
     if (refId.empty()) {
@@ -2136,13 +2136,56 @@ TEST_F(AppManagerEventHandlerTest, OnActivePublishesTelemetryPayloadWithTimingAn
     ASSERT_TRUE(payloadObject.HasLabel("totalStartToActiveMs"));
     ASSERT_TRUE(payloadObject.HasLabel("preinstallDurationMs"));
     ASSERT_TRUE(payloadObject.HasLabel("launchToActiveMs"));
+    ASSERT_FALSE(payloadObject.HasLabel("cumulativeRelaunchCount"));
+    ASSERT_FALSE(payloadObject.HasLabel("terminationNature"));
+
+    EXPECT_GE(payloadObject["totalStartToActiveMs"].Number(), 0);
+    EXPECT_GE(payloadObject["preinstallDurationMs"].Number(), 0);
+    EXPECT_GE(payloadObject["launchToActiveMs"].Number(), 0);
+}
+
+TEST_F(AppManagerEventHandlerTest, OnActivePublishesRelaunchTelemetryWithoutStartupTimingFields) {
+    SceneSetApp& instance = SceneSetApp::getInstance();
+    const std::string& refId = SceneSetAppTestPeer::GetReferenceAppId(instance);
+    if (refId.empty()) {
+        GTEST_SKIP() << "Reference app ID is empty; skipping.";
+    }
+
+    const uint64_t nowMs = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
+
+    SceneSetAppTestPeer::SetSceneSetStartTimestampMs(instance, nowMs - 1200);
+    SceneSetAppTestPeer::SetPreinstallStartTimestampMs(instance, nowMs - 1000);
+    SceneSetAppTestPeer::SetPreinstallEndTimestampMs(instance, nowMs - 700);
+    SceneSetAppTestPeer::SetLaunchRequestTimestampMs(instance, nowMs - 200);
+    SceneSetAppTestPeer::SetPendingActiveTelemetry(instance, true);
+    SceneSetAppTestPeer::SetCumulativeRelaunchCount(instance, 1);
+    SceneSetAppTestPeer::SetLastTerminationNature(instance, 2);
+    SceneSetAppTestPeer::ClearLastTelemetry(instance);
+
+    SceneSetAppTestPeer::CallAppManagerOnAppLifecycleStateChanged(
+        refId, "inst-1",
+        Exchange::IAppManager::AppLifecycleState::APP_STATE_ACTIVE,
+        Exchange::IAppManager::AppLifecycleState::APP_STATE_RUNNING,
+        static_cast<Exchange::IAppManager::AppErrorReason>(0));
+
+    EXPECT_TRUE(SceneSetAppTestPeer::GetAppLaunched(instance));
+    EXPECT_EQ(SceneSetAppTestPeer::GetLastTelemetryMarker(instance), "ENTS_INFO_Sceneset_LaunchTime");
+
+    const std::string payload = SceneSetAppTestPeer::GetLastTelemetryPayload(instance);
+    EXPECT_FALSE(payload.empty());
+
+    JsonObject payloadObject;
+    ASSERT_TRUE(payloadObject.FromString(payload));
+
+    ASSERT_FALSE(payloadObject.HasLabel("totalStartToActiveMs"));
+    ASSERT_FALSE(payloadObject.HasLabel("preinstallDurationMs"));
+    ASSERT_TRUE(payloadObject.HasLabel("launchToActiveMs"));
     ASSERT_TRUE(payloadObject.HasLabel("cumulativeRelaunchCount"));
     ASSERT_TRUE(payloadObject.HasLabel("terminationNature"));
 
-    EXPECT_EQ(payloadObject["cumulativeRelaunchCount"].Number(), 0);
-    EXPECT_EQ(payloadObject["terminationNature"].String(), "none");
-    EXPECT_GE(payloadObject["totalStartToActiveMs"].Number(), 0);
-    EXPECT_GE(payloadObject["preinstallDurationMs"].Number(), 0);
+    EXPECT_EQ(payloadObject["cumulativeRelaunchCount"].Number(), 1);
+    EXPECT_EQ(payloadObject["terminationNature"].String(), "intentional_kill");
     EXPECT_GE(payloadObject["launchToActiveMs"].Number(), 0);
 }
 
