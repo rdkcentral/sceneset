@@ -38,7 +38,11 @@
 #include <string_view>
 #include <optional>
 
-#if defined(SCENESET_TELEMETRY_METRICS_SUPPORT) && SCENESET_TELEMETRY_METRICS_SUPPORT
+#ifndef SCENESET_TELEMETRY_METRICS_SUPPORT
+#define SCENESET_TELEMETRY_METRICS_SUPPORT 0
+#endif
+
+#if SCENESET_TELEMETRY_METRICS_SUPPORT
 #include <telemetry_busmessage_sender.h>
 #endif
 
@@ -68,10 +72,6 @@
 
 #ifndef RESTART_HOMEAPP_ALWAYS
 #define RESTART_HOMEAPP_ALWAYS 0
-#endif
-
-#ifndef SCENESET_TELEMETRY_METRICS_SUPPORT
-#define SCENESET_TELEMETRY_METRICS_SUPPORT 0
 #endif
 
 #define SCENESET_CONFIG_FILE "/opt/sceneset_app.conf"
@@ -248,7 +248,8 @@ static std::string getDefaultAppName() {
 }
 
 SceneSetApp::SceneSetApp()
-    : m_isActive(false), m_lock(), m_appManager(nullptr), m_preinstallManager(nullptr), m_packageInstaller(nullptr), m_appManagerEventHandler(nullptr), m_preinstallManagerEventHandler(nullptr), m_packageInstallerEventHandler(nullptr), m_appmgrCallsign("org.rdk.AppManager"), m_preinstallCallsign("org.rdk.PreinstallManager"), m_referenceAppId(getDefaultAppName()), m_comrpcPath("/tmp/communicator"), m_downloadDirectory(""), m_preinstallDirectory(APP_PREINSTALL_DIRECTORY), m_launchThread(nullptr), m_stopLaunchThread(false), m_appLaunched(false), m_pendingRestart(false), m_launchThreadMutex(), m_downloadMonitorThread(nullptr), m_stopDownloadMonitorThread(false), m_downloadMonitorMutex(), m_preinstallCompletionThread(nullptr), m_preinstallCompletionThreadMutex(), m_waitingForStartupPreinstallCompletion(false), m_startupPreinstallHasFailure(false), m_sceneSetStartTsMs(monotonicTimestampMs()), m_preinstallStartTsMs(0), m_preinstallEndTsMs(0), m_lastLaunchRequestTsMs(0), m_pendingActiveTelemetry(false), m_cumulativeRelaunchCount(0), m_lastTerminationNature(static_cast<int>(TerminationNature::NONE)) {
+    : m_isActive(false), m_lock(), m_appManager(nullptr), m_preinstallManager(nullptr), m_packageInstaller(nullptr), m_appManagerEventHandler(nullptr), m_preinstallManagerEventHandler(nullptr), m_packageInstallerEventHandler(nullptr), m_appmgrCallsign("org.rdk.AppManager"), m_preinstallCallsign("org.rdk.PreinstallManager"), m_referenceAppId(getDefaultAppName()), m_comrpcPath("/tmp/communicator"), m_downloadDirectory(""), m_preinstallDirectory(APP_PREINSTALL_DIRECTORY), m_launchThread(nullptr), m_stopLaunchThread(false), m_appLaunched(false), m_pendingRestart(false), m_launchThreadMutex(), m_downloadMonitorThread(nullptr), m_stopDownloadMonitorThread(false), m_downloadMonitorMutex(), m_preinstallCompletionThread(nullptr) {
+    m_telemetryMetricsState.sceneSetStartTsMs = monotonicTimestampMs();
 }
 
 SceneSetApp::~SceneSetApp() {
@@ -265,12 +266,12 @@ SceneSetApp::~SceneSetApp() {
 
 bool SceneSetApp::initialize() {
     recordSceneSetStartTimestamp();
-    m_preinstallStartTsMs = 0;
-    m_preinstallEndTsMs = 0;
-    m_lastLaunchRequestTsMs = 0;
-    m_pendingActiveTelemetry = false;
-    m_cumulativeRelaunchCount = 0;
-    m_lastTerminationNature = static_cast<int>(TerminationNature::NONE);
+    m_telemetryMetricsState.preinstallStartTsMs = 0;
+    m_telemetryMetricsState.preinstallEndTsMs = 0;
+    m_telemetryMetricsState.lastLaunchRequestTsMs = 0;
+    m_telemetryMetricsState.pendingActiveTelemetry = false;
+    m_telemetryMetricsState.cumulativeRelaunchCount = 0;
+    m_telemetryMetricsState.lastTerminationNature = static_cast<int>(TerminationNature::NONE);
 #ifdef UNIT_TEST
     m_lastTelemetryMarker.clear();
     m_lastTelemetryPayload.clear();
@@ -461,7 +462,7 @@ bool SceneSetApp::initialize() {
         m_isActive = true;
     }
 
-#if defined(SCENESET_TELEMETRY_METRICS_SUPPORT) && SCENESET_TELEMETRY_METRICS_SUPPORT
+#if SCENESET_TELEMETRY_METRICS_SUPPORT
     static char kT2ComponentName[] = "sceneset";
     t2_init(kT2ComponentName);
 #endif
@@ -560,7 +561,7 @@ bool SceneSetApp::launchDefaultApp() {
     Core::hresult result = m_appManager->LaunchApp(m_referenceAppId, "", "");
     if (result != Core::ERROR_NONE) {
         std::cerr << "LaunchApp failed with error code: " << result << std::endl;
-        m_pendingActiveTelemetry = false;
+        m_telemetryMetricsState.pendingActiveTelemetry = false;
         return false;
     }
     recordLaunchRequestTimestamp();
@@ -780,7 +781,7 @@ void SceneSetApp::cleanupPreinstallFolder() {
 
 void SceneSetApp::completeStartupAfterPreinstall() {
     bool expected = true;
-    if (!m_waitingForStartupPreinstallCompletion.compare_exchange_strong(expected, false)) {
+    if (!m_startupPreinstallState.waitingForCompletion.compare_exchange_strong(expected, false)) {
         return;
     }
 
@@ -805,7 +806,7 @@ void SceneSetApp::completeStartupAfterPreinstall() {
 }
 
 void SceneSetApp::resetStartupPreinstallStatusTracking() {
-    m_startupPreinstallHasFailure = false;
+    m_startupPreinstallState.hasFailure = false;
 }
 
 void SceneSetApp::recordStartupPreinstallStatus(const std::string& jsonresponse) {
@@ -867,13 +868,13 @@ void SceneSetApp::recordStartupPreinstallStatus(const std::string& jsonresponse)
         if (state != kPackageInstallStateInstalled && state != kPackageInstallStateInstalling) {
             std::cerr << "Preinstall package '" << packageKey
                       << "' reported unexpected state '" << state << "'; marking preinstall as failed." << std::endl;
-            m_startupPreinstallHasFailure = true;
+            m_startupPreinstallState.hasFailure = true;
         }
     }
 }
 
 bool SceneSetApp::isStartupPreinstallSucceed() const {
-    if (m_startupPreinstallHasFailure) {
+    if (m_startupPreinstallState.hasFailure) {
         std::cerr << "One or more preinstall packages reported a failure state." << std::endl;
         return false;
     }
@@ -1001,7 +1002,7 @@ void SceneSetApp::run() {
     // Use forceInstall=true for FSR cases (force reinstall all packages)
     // Use forceInstall=false for normal boots (only install if newer version)
     resetStartupPreinstallStatusTracking();
-    m_waitingForStartupPreinstallCompletion = true;
+    m_startupPreinstallState.waitingForCompletion = true;
     std::cout << "Starting preinstall process and waiting for OnPreinstallationComplete" << std::endl;
     if (!startPreinstall(isFactoryReset)) {
         std::cerr << "Failed to start preinstall process. Continuing startup flow without deleting preinstall files." << std::endl;
@@ -1061,7 +1062,7 @@ void SceneSetApp::AppManagerEventHandler::OnAppLifecycleStateChanged(const strin
             newState == Exchange::IAppManager::AppLifecycleState::APP_STATE_ACTIVE) {
             instance.m_appLaunched = true;
             if (newState == Exchange::IAppManager::AppLifecycleState::APP_STATE_ACTIVE) {
-                const bool shouldPublishTelemetry = instance.m_pendingActiveTelemetry.exchange(false);
+                const bool shouldPublishTelemetry = instance.m_telemetryMetricsState.pendingActiveTelemetry.exchange(false);
                 if (shouldPublishTelemetry) {
                     instance.publishHomeAppActiveTelemetry(monotonicTimestampMs());
                 }
@@ -1102,7 +1103,7 @@ void SceneSetApp::AppManagerEventHandler::OnAppLifecycleStateChanged(const strin
             }
 
             if (shouldRestart) {
-                instance.m_cumulativeRelaunchCount.fetch_add(1);
+                instance.m_telemetryMetricsState.cumulativeRelaunchCount.fetch_add(1);
                 instance.startLaunchThread();
             }
         } else if (newState == Exchange::IAppManager::AppLifecycleState::APP_STATE_TERMINATING) {
@@ -1203,7 +1204,7 @@ void SceneSetApp::startPreinstallCompletionThread() {
         return;
     }
 
-    std::lock_guard<std::mutex> lock(m_preinstallCompletionThreadMutex);
+    std::lock_guard<std::mutex> lock(m_startupPreinstallState.completionThreadMutex);
     if (m_preinstallCompletionThread && m_preinstallCompletionThread->joinable()) {
         std::cout << "Preinstall completion thread already running, skipping duplicate start." << std::endl;
         return;
@@ -1216,7 +1217,7 @@ void SceneSetApp::startPreinstallCompletionThread() {
 void SceneSetApp::stopPreinstallCompletionThread() {
     std::unique_ptr<std::thread> threadToJoin;
     {
-        std::lock_guard<std::mutex> lock(m_preinstallCompletionThreadMutex);
+        std::lock_guard<std::mutex> lock(m_startupPreinstallState.completionThreadMutex);
         if (m_preinstallCompletionThread && m_preinstallCompletionThread->joinable()) {
             threadToJoin = std::move(m_preinstallCompletionThread);
         } else {
@@ -1721,24 +1722,24 @@ bool SceneSetApp::loadSystemConfig(std::unordered_map<std::string, std::string>&
 }
 
 void SceneSetApp::recordSceneSetStartTimestamp() {
-    m_sceneSetStartTsMs = monotonicTimestampMs();
+    m_telemetryMetricsState.sceneSetStartTsMs = monotonicTimestampMs();
 }
 
 void SceneSetApp::recordPreinstallStartTimestamp() {
-    m_preinstallStartTsMs = monotonicTimestampMs();
+    m_telemetryMetricsState.preinstallStartTsMs = monotonicTimestampMs();
 }
 
 void SceneSetApp::recordPreinstallEndTimestamp() {
-    m_preinstallEndTsMs = monotonicTimestampMs();
+    m_telemetryMetricsState.preinstallEndTsMs = monotonicTimestampMs();
 }
 
 void SceneSetApp::recordLaunchRequestTimestamp() {
-    m_lastLaunchRequestTsMs = monotonicTimestampMs();
-    m_pendingActiveTelemetry = true;
+    m_telemetryMetricsState.lastLaunchRequestTsMs = monotonicTimestampMs();
+    m_telemetryMetricsState.pendingActiveTelemetry = true;
 }
 
 void SceneSetApp::setLastTerminationNature(TerminationNature nature) {
-    m_lastTerminationNature = static_cast<int>(nature);
+    m_telemetryMetricsState.lastTerminationNature = static_cast<int>(nature);
 }
 
 const char* SceneSetApp::toTerminationNatureString(TerminationNature nature) {
@@ -1754,10 +1755,10 @@ const char* SceneSetApp::toTerminationNatureString(TerminationNature nature) {
 }
 
 void SceneSetApp::publishHomeAppActiveTelemetry(uint64_t activeTimestampMs) {
-    const uint64_t sceneSetStartTsMs = m_sceneSetStartTsMs.load();
-    const uint64_t preinstallStartTsMs = m_preinstallStartTsMs.load();
-    const uint64_t preinstallEndTsMs = m_preinstallEndTsMs.load();
-    const uint64_t launchRequestTsMs = m_lastLaunchRequestTsMs.load();
+    const uint64_t sceneSetStartTsMs = m_telemetryMetricsState.sceneSetStartTsMs.load();
+    const uint64_t preinstallStartTsMs = m_telemetryMetricsState.preinstallStartTsMs.load();
+    const uint64_t preinstallEndTsMs = m_telemetryMetricsState.preinstallEndTsMs.load();
+    const uint64_t launchRequestTsMs = m_telemetryMetricsState.lastLaunchRequestTsMs.load();
 
     const uint64_t totalStartToActiveMs =
         (sceneSetStartTsMs > 0 && activeTimestampMs >= sceneSetStartTsMs)
@@ -1772,8 +1773,8 @@ void SceneSetApp::publishHomeAppActiveTelemetry(uint64_t activeTimestampMs) {
             ? (activeTimestampMs - launchRequestTsMs)
             : 0;
 
-    const TerminationNature terminationNature = static_cast<TerminationNature>(m_lastTerminationNature.load());
-    const uint32_t cumulativeRelaunchCount = m_cumulativeRelaunchCount.load();
+    const TerminationNature terminationNature = static_cast<TerminationNature>(m_telemetryMetricsState.lastTerminationNature.load());
+    const uint32_t cumulativeRelaunchCount = m_telemetryMetricsState.cumulativeRelaunchCount.load();
     const bool isInitialLaunchTelemetry =
         (cumulativeRelaunchCount == 0 && terminationNature == TerminationNature::NONE);
 
@@ -1805,7 +1806,7 @@ void SceneSetApp::publishTelemetryMarker(const std::string& marker, const std::s
     m_lastTelemetryPayload = payload;
 #endif
 
-#if defined(SCENESET_TELEMETRY_METRICS_SUPPORT) && SCENESET_TELEMETRY_METRICS_SUPPORT
+#if SCENESET_TELEMETRY_METRICS_SUPPORT
     std::string markerBuffer = marker;
     std::string payloadBuffer = payload;
     t2_event_s(markerBuffer.data(), payloadBuffer.data());
@@ -1832,7 +1833,7 @@ void SceneSetApp::PackageInstallerEventHandler::OnAppInstallationStatus(const st
     std::cout << "PackageManager OnAppInstallationStatus: " << jsonresponse << std::endl;
 
     SceneSetApp& instance = SceneSetApp::getInstance();
-    if (instance.m_waitingForStartupPreinstallCompletion.load()) {
+    if (instance.m_startupPreinstallState.waitingForCompletion.load()) {
         instance.recordStartupPreinstallStatus(jsonresponse);
     }
 }

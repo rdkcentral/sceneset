@@ -20,12 +20,14 @@ SceneSet emits a telemetry marker when the configured home app reaches `ACTIVE`.
 
 For the first published marker in a SceneSet process lifetime (initial boot launch), SceneSet includes:
 
+- `appId`: configured reference app ID.
 - `totalStartToActiveMs`: time from SceneSet startup to home app `ACTIVE`.
 - `preinstallDurationMs`: time from preinstall start to preinstall completion path.
 - `launchToActiveMs`: time from home app launch request to home app `ACTIVE`.
 
 For subsequent relaunch markers in the same SceneSet process lifetime, SceneSet includes only:
 
+- `appId`: configured reference app ID.
 - `launchToActiveMs`: time from home app launch request to home app `ACTIVE`.
 
 ---
@@ -34,7 +36,6 @@ For subsequent relaunch markers in the same SceneSet process lifetime, SceneSet 
 
 For relaunch markers only, SceneSet includes:
 
-- `appId`: configured reference app ID.
 - `cumulativeRelaunchCount`: relaunch count accumulated during the current SceneSet process lifetime.
 - `terminationNature`: one of `none` (no prior termination context), `crash`, `intentional_kill`.
 

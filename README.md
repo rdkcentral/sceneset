@@ -98,12 +98,15 @@ The project uses CMake for building.
 When built with `SCENESET_TELEMETRY_METRICS_SUPPORT=ON`, SceneSet initializes T2 with component name `sceneset` and emits marker `ENTS_INFO_Sceneset_LaunchTime` when the reference app reaches `ACTIVE`.
 
 Marker payload fields:
-- `appId`: configured reference app ID
-- `totalStartToActiveMs`: total duration from SceneSet startup to app `ACTIVE`
-- `preinstallDurationMs`: preinstall duration (`StartPreinstall` to preinstall completion path)
-- `launchToActiveMs`: duration from `LaunchApp` request to app `ACTIVE`
-- `cumulativeRelaunchCount`: process-lifetime relaunch count
-- `terminationNature`: `none`, `crash`, or `intentional_kill`
+- Always present:
+  - `appId`: configured reference app ID
+  - `launchToActiveMs`: duration from `LaunchApp` request to app `ACTIVE`
+- Initial launch only (first successful `ACTIVE` in the SceneSet process lifetime):
+  - `totalStartToActiveMs`: total duration from SceneSet startup to app `ACTIVE`
+  - `preinstallDurationMs`: preinstall duration (`StartPreinstall` to preinstall completion path)
+- Relaunch only:
+  - `cumulativeRelaunchCount`: process-lifetime relaunch count
+  - `terminationNature`: `none`, `crash`, or `intentional_kill`
 
 ## Service Dependencies
 

@@ -25,7 +25,6 @@
 #include <thread>
 #include <atomic>
 #include <csignal>
-#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <mutex>
@@ -88,6 +87,22 @@ private:
         INTENTIONAL_KILL = 2,
     };
 
+    struct StartupPreinstallState {
+        std::mutex completionThreadMutex;
+        std::atomic<bool> waitingForCompletion { false };
+        std::atomic<bool> hasFailure { false };
+    };
+
+    struct TelemetryMetricsState {
+        std::atomic<uint64_t> sceneSetStartTsMs { 0 };
+        std::atomic<uint64_t> preinstallStartTsMs { 0 };
+        std::atomic<uint64_t> preinstallEndTsMs { 0 };
+        std::atomic<uint64_t> lastLaunchRequestTsMs { 0 };
+        std::atomic<bool> pendingActiveTelemetry { false };
+        std::atomic<uint32_t> cumulativeRelaunchCount { 0 };
+        std::atomic<int> lastTerminationNature { static_cast<int>(TerminationNature::NONE) };
+    };
+
 #ifdef UNIT_TEST
     std::string m_lastTelemetryMarker;
     std::string m_lastTelemetryPayload;
@@ -116,16 +131,8 @@ private:
     std::atomic<bool> m_stopDownloadMonitorThread;
     std::mutex m_downloadMonitorMutex;
     std::unique_ptr<std::thread> m_preinstallCompletionThread;
-    std::mutex m_preinstallCompletionThreadMutex;
-    std::atomic<bool> m_waitingForStartupPreinstallCompletion;
-    std::atomic<bool> m_startupPreinstallHasFailure;
-    std::atomic<uint64_t> m_sceneSetStartTsMs;
-    std::atomic<uint64_t> m_preinstallStartTsMs;
-    std::atomic<uint64_t> m_preinstallEndTsMs;
-    std::atomic<uint64_t> m_lastLaunchRequestTsMs;
-    std::atomic<bool> m_pendingActiveTelemetry;
-    std::atomic<uint32_t> m_cumulativeRelaunchCount;
-    std::atomic<int> m_lastTerminationNature;
+    StartupPreinstallState m_startupPreinstallState;
+    TelemetryMetricsState m_telemetryMetricsState;
 
     void stopCurrentLaunchThread();
     void startLaunchThread();
