@@ -38,7 +38,7 @@
 #include <string_view>
 #include <optional>
 
-#if SCENESET_TELEMETRY_METRICS_SUPPORT
+#if defined(SCENESET_TELEMETRY_METRICS_SUPPORT) && SCENESET_TELEMETRY_METRICS_SUPPORT
 #include <telemetry_busmessage_sender.h>
 #endif
 
@@ -461,8 +461,9 @@ bool SceneSetApp::initialize() {
         m_isActive = true;
     }
 
-#if SCENESET_TELEMETRY_METRICS_SUPPORT
-    t2_init(const_cast<char*>("sceneset"));
+#if defined(SCENESET_TELEMETRY_METRICS_SUPPORT) && SCENESET_TELEMETRY_METRICS_SUPPORT
+    static char kT2ComponentName[] = "sceneset";
+    t2_init(kT2ComponentName);
 #endif
 
     cout << "Registered to AppManager. Waiting for term signal via sigwait" << endl;
@@ -1804,8 +1805,10 @@ void SceneSetApp::publishTelemetryMarker(const std::string& marker, const std::s
     m_lastTelemetryPayload = payload;
 #endif
 
-#if SCENESET_TELEMETRY_METRICS_SUPPORT
-    t2_event_s(const_cast<char*>(marker.c_str()), const_cast<char*>(payload.c_str()));
+#if defined(SCENESET_TELEMETRY_METRICS_SUPPORT) && SCENESET_TELEMETRY_METRICS_SUPPORT
+    std::string markerBuffer = marker;
+    std::string payloadBuffer = payload;
+    t2_event_s(markerBuffer.data(), payloadBuffer.data());
 #else
     (void)marker;
     (void)payload;
