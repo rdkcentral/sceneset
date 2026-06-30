@@ -70,7 +70,10 @@ cd ..
 
 git clone --branch R4.4.3 https://github.com/rdkcentral/ThunderTools.git
 
-git clone --branch R4.4.1 https://github.com/rdkcentral/Thunder.git
+# Using R4.4.3 (same as ThunderTools) to avoid version mismatches
+# R4.4.1 has JSONRPC API issues that require patches
+git clone --branch R4.4.3 https://github.com/rdkcentral/Thunder.git 2>/dev/null || \
+    git clone --branch develop https://github.com/rdkcentral/Thunder.git
 
 git clone --branch develop https://github.com/rdkcentral/entservices-apis.git
 
@@ -110,6 +113,7 @@ cmake -G Ninja -S Thunder -B build/Thunder \
     -DCMAKE_MODULE_PATH="$GITHUB_WORKSPACE/install/tools/cmake" \
     -DDATA_PATH="$GITHUB_WORKSPACE/install/usr/share/Thunder" \
     -DEXCEPTIONS_ENABLE=ON \
+    -DMESSAGING=ON \
     -DPERSISTENT_PATH="$GITHUB_WORKSPACE/install/usr/lib" \
     -DPLUGIN_SYSTEMCOMMANDS=ON \
     -DPORT="55555" \
