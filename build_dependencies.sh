@@ -75,13 +75,8 @@ git clone --branch R4.4.3 https://github.com/rdkcentral/ThunderTools.git
 git clone --branch R4.4.3 https://github.com/rdkcentral/Thunder.git 2>/dev/null || \
     git clone --branch develop https://github.com/rdkcentral/Thunder.git
 
-git clone --branch develop https://github.com/rdkcentral/entservices-apis.git
-
-git clone -b develop https://github.com/rdkcentral/eshelpers.git
-
+# Only clone ralf-utils which is required for libralf (needed by sceneset)
 git clone -b v1.2.0 https://github.com/rdkcentral/ralf-utils.git
-
-git clone -b develop https://github.com/rdkcentral/libPackage.git
 
 ############################
 # Build Thunder-Tools
@@ -123,34 +118,9 @@ cmake -G Ninja -S Thunder -B build/Thunder \
 cmake --build build/Thunder --target install
 
 ############################
-# Build entservices-apis
-echo "======================================================================================"
-echo "building entservices-apis"
-
-cmake -G Ninja -S entservices-apis -B build/entservices-apis \
-    -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/install/usr" \
-    -DCMAKE_MODULE_PATH="$GITHUB_WORKSPACE/install/tools/cmake" \
-    -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/install/usr" \
-    -DBUILD_ENTSERVICES_COMMON=ON
-
-cmake --build build/entservices-apis --target install
-
-############################
-# Build eshelpers
-echo "======================================================================================"
-echo "building eshelpers"
-
-cmake -G Ninja -S eshelpers -B build/eshelpers \
-    -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/install/usr" \
-    -DCMAKE_MODULE_PATH="$GITHUB_WORKSPACE/install/tools/cmake" \
-    -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/install/usr"
-
-cmake --build build/eshelpers --target install
-
-############################
 # Build ralf-utils (libralf)
 echo "======================================================================================"
-echo "building ralf-utils"
+echo "building ralf-utils (libralf)"
 
 cmake -G Ninja -S ralf-utils -B build/ralf-utils \
     -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/install/usr" \
@@ -159,18 +129,6 @@ cmake -G Ninja -S ralf-utils -B build/ralf-utils \
     -DBUILD_SHARED_LIBS=ON
 
 cmake --build build/ralf-utils --target install
-
-############################
-# Build libPackage
-echo "======================================================================================"
-echo "building libPackage"
-
-cmake -G Ninja -S libPackage -B build/libPackage \
-    -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/install/usr" \
-    -DCMAKE_MODULE_PATH="$GITHUB_WORKSPACE/install/tools/cmake" \
-    -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/install/usr"
-
-cmake --build build/libPackage --target install
 
 echo "======================================================================================"
 echo "All dependencies built successfully"
