@@ -19,38 +19,35 @@ apt install -y libsqlite3-dev libcurl4-openssl-dev valgrind lcov clang libsystem
 pip install jsonref
 
 ############################
-# Install CMake 3.22 or higher (required by CMakeLists.txt)
+# Install CMake 3.22 or higher (required by libralf which needs 3.19+)
 CMAKE_VERSION="3.22.6"
 CMAKE_DIR="cmake-${CMAKE_VERSION}-linux-x86_64"
 
-# Check if cmake needs upgrade
-NEED_CMAKE_INSTALL=false
-if ! command -v cmake &> /dev/null; then
-    echo "CMake not found, will install ${CMAKE_VERSION}"
-    NEED_CMAKE_INSTALL=true
-else
-    CURRENT_CMAKE_VERSION=$(cmake --version | head -n1 | awk '{print $3}')
-    REQUIRED_VERSION="3.16"
-    if [ "$(printf '%s\n' "$REQUIRED_VERSION" "$CURRENT_CMAKE_VERSION" | sort -V | head -n1)" != "$REQUIRED_VERSION" ]; then
-        echo "Current CMake version $CURRENT_CMAKE_VERSION is less than required $REQUIRED_VERSION"
-        NEED_CMAKE_INSTALL=true
-    fi
-fi
+# Always check and upgrade if needed
+CURRENT_CMAKE_VERSION=$(cmake --version 2>/dev/null | head -n1 | awk '{print $3}' || echo "0.0.0")
+REQUIRED_VERSION="3.19.0"
 
-if [ "$NEED_CMAKE_INSTALL" = true ]; then
-    echo "Installing CMake ${CMAKE_VERSION}..."
+echo "Current CMake version: $CURRENT_CMAKE_VERSION"
+echo "Required CMake version: $REQUIRED_VERSION"
+
+# Simple version comparison: check if current is less than required
+if [ "$(printf '%s\n' "$CURRENT_CMAKE_VERSION" "$REQUIRED_VERSION" | sort -V | head -n1)" != "$REQUIRED_VERSION" ]; then
+    echo "CMake upgrade needed. Installing CMake ${CMAKE_VERSION}..."
     wget -q https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/${CMAKE_DIR}.tar.gz
     tar -xzf ${CMAKE_DIR}.tar.gz
     cp -rf ${CMAKE_DIR}/bin/* /usr/local/bin/
     cp -rf ${CMAKE_DIR}/share/* /usr/local/share/
     rm -rf ${CMAKE_DIR} ${CMAKE_DIR}.tar.gz
     echo "CMake ${CMAKE_VERSION} installed successfully"
+else
+    echo "CMake version is sufficient, no upgrade needed"
 fi
 
-# Ensure /usr/local/bin is in PATH for Coverity environment
+# Ensure /usr/local/bin is in PATH
 export PATH=/usr/local/bin:$PATH
 
 # Verify CMake installation
+echo "Final CMake version:"
 cmake --version
 echo "CMake path: $(which cmake)"
 
