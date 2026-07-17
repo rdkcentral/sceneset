@@ -94,6 +94,7 @@ endif()
 set(ENABLE_SYSTEM_CONFIG OFF CACHE BOOL "Enable reading system config from /etc/sceneset.conf")
 set(ENABLE_CONFIG_OVERRIDE OFF CACHE BOOL "Enable optional /opt/sceneset.conf override on top of /etc/sceneset.conf")
 set(RESTART_HOMEAPP_ALWAYS OFF CACHE BOOL "Restart reference app on every TERMINATING to UNLOADED transition")
+set(SCENESET_TELEMETRY_METRICS_SUPPORT OFF CACHE BOOL "Enable SceneSet telemetry marker publication via T2")
 
 include(GNUInstallDirs)
 target_include_directories(${TARGET} PRIVATE ${COMMON_INCLUDE_DIRS})
@@ -135,6 +136,7 @@ target_compile_definitions(${TARGET} PRIVATE
     ENABLE_SYSTEM_CONFIG=$<BOOL:${ENABLE_SYSTEM_CONFIG}>
     ENABLE_CONFIG_OVERRIDE=$<BOOL:${ENABLE_CONFIG_OVERRIDE}>
     RESTART_HOMEAPP_ALWAYS=$<BOOL:${RESTART_HOMEAPP_ALWAYS}>
+    SCENESET_TELEMETRY_METRICS_SUPPORT=$<BOOL:${SCENESET_TELEMETRY_METRICS_SUPPORT}>
     DISABLE_REFERENCE_APP_UPDATE=$<BOOL:${DISABLE_REFERENCE_APP_UPDATE}>
     GIT_SHORT_SHA="${GIT_SHORT_SHA}"
 )
