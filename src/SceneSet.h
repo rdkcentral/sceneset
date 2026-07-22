@@ -25,6 +25,7 @@
 #include <thread>
 #include <atomic>
 #include <csignal>
+#include <cstdint>
 #include <filesystem>
 #include <mutex>
 #include <unordered_map>
@@ -80,6 +81,33 @@ private:
     friend class SceneSetAppTestPeer;
 #endif
 
+    enum class TerminationNature : int {
+        NONE = 0,
+        CRASH = 1,
+        INTENTIONAL_KILL = 2,
+    };
+
+    struct StartupPreinstallState {
+        std::mutex completionThreadMutex;
+        std::atomic<bool> waitingForCompletion { false };
+        std::atomic<bool> hasFailure { false };
+    };
+
+    struct TelemetryMetricsState {
+        std::atomic<uint64_t> sceneSetStartTsMs { 0 };
+        std::atomic<uint64_t> preinstallStartTsMs { 0 };
+        std::atomic<uint64_t> preinstallEndTsMs { 0 };
+        std::atomic<uint64_t> lastLaunchRequestTsMs { 0 };
+        std::atomic<bool> pendingActiveTelemetry { false };
+        std::atomic<uint32_t> cumulativeRelaunchCount { 0 };
+        std::atomic<int> lastTerminationNature { static_cast<int>(TerminationNature::NONE) };
+    };
+
+#ifdef UNIT_TEST
+    std::string m_lastTelemetryMarker;
+    std::string m_lastTelemetryPayload;
+#endif
+
     std::atomic<bool> m_isActive;
     std::mutex m_lock;
     Exchange::IAppManager *m_appManager;
@@ -103,9 +131,8 @@ private:
     std::atomic<bool> m_stopDownloadMonitorThread;
     std::mutex m_downloadMonitorMutex;
     std::unique_ptr<std::thread> m_preinstallCompletionThread;
-    std::mutex m_preinstallCompletionThreadMutex;
-    std::atomic<bool> m_waitingForStartupPreinstallCompletion;
-    std::atomic<bool> m_startupPreinstallHasFailure;
+    StartupPreinstallState m_startupPreinstallState;
+    TelemetryMetricsState m_telemetryMetricsState;
 
     void stopCurrentLaunchThread();
     void startLaunchThread();
@@ -133,6 +160,14 @@ private:
     void resolveDynamicDirectories();
     std::string getSystemConfigPath() const;
     bool loadSystemConfig(std::unordered_map<std::string, std::string>& values) const;
+    void publishTelemetryMarker(const std::string& marker, const std::string& payload);
+    void publishHomeAppActiveTelemetry(uint64_t activeTimestampMs);
+    void recordSceneSetStartTimestamp();
+    void recordPreinstallStartTimestamp();
+    void recordPreinstallEndTimestamp();
+    void recordLaunchRequestTimestamp();
+    void setLastTerminationNature(TerminationNature nature);
+    static const char* toTerminationNatureString(TerminationNature nature);
 
     class AppManagerEventHandler : public Exchange::IAppManager::INotification {
     public:

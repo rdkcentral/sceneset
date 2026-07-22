@@ -19,6 +19,7 @@ SceneSet serves as the **application launcher orchestrator** for RDK-based Set-T
 | **Factory Reset Handling** | Detects first boot and copies factory app bundles to the preinstall directory |
 | **OTA Update Monitoring** | Watches download directories for new RALF packages and stages them for installation |
 | **Crash Recovery** | Monitors app lifecycle and restarts the reference app on abnormal termination |
+| **Launch Telemetry** | Emits `ENTS_INFO_Sceneset_LaunchTime` on home-app `ACTIVE` for launch timing and relaunch context |
 | **Graceful Shutdown** | Handles SIGTERM/SIGINT signals to cleanly terminate the service |
 
 ### Interacting Subsystems
@@ -171,9 +172,11 @@ flowchart TD
     N --> O
     O -->|Installed| P[Launch App]
     O -->|Not Installed| Q[Wait for Install Event]
-    P --> R[Start Download Monitor]
+    P --> R[Home App ACTIVE]
     Q --> R
-    R --> S[waitForTermSignal]
+    R --> T[Publish Launch Telemetry Marker]
+    T --> U[Start Download Monitor]
+    U --> S[waitForTermSignal]
 ```
 
 ### OTA Update Flow
