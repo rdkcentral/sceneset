@@ -1038,12 +1038,15 @@ void SceneSetApp::AppManagerEventHandler::OnAppLifecycleStateChanged(const strin
                 // Optional build behavior: restart on any TERMINATING->UNLOADED transition.
                 std::cout << "App " << appId << " terminated. Restarting reference app due to RESTART_HOMEAPP_ALWAYS." << std::endl;
                 instance.startLaunchThread();
-#else
+#elif !DISABLE_CRASH_RECOVERY
                 // Default behavior: restart only for ABORT terminations.
+                // Disable with -DDISABLE_CRASH_RECOVERY=ON when HomeAppManager owns crash recovery.
                 if (errorReason == Exchange::IAppManager::AppErrorReason::APP_ERROR_ABORT) {
                     std::cout << "App " << appId << " terminated with ABORT error. Restarting reference app." << std::endl;
                     instance.startLaunchThread();
                 }
+#else
+                std::cout << "App " << appId << " terminated. Crash recovery disabled (DISABLE_CRASH_RECOVERY=ON)." << std::endl;
 #endif
             }
         } else if (newState == Exchange::IAppManager::AppLifecycleState::APP_STATE_TERMINATING) {

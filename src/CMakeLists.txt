@@ -94,6 +94,7 @@ endif()
 set(ENABLE_SYSTEM_CONFIG OFF CACHE BOOL "Enable reading system config from /etc/sceneset.conf")
 set(ENABLE_CONFIG_OVERRIDE OFF CACHE BOOL "Enable optional /opt/sceneset.conf override on top of /etc/sceneset.conf")
 set(RESTART_HOMEAPP_ALWAYS OFF CACHE BOOL "Restart reference app on every TERMINATING to UNLOADED transition")
+set(DISABLE_CRASH_RECOVERY OFF CACHE BOOL "Disable crash-triggered restart of the reference app. Use when an external component (e.g. HomeAppManager) owns crash recovery.")
 
 include(GNUInstallDirs)
 target_include_directories(${TARGET} PRIVATE ${COMMON_INCLUDE_DIRS})
