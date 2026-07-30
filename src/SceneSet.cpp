@@ -18,6 +18,7 @@
  */
 
 #include "SceneSet.h"
+#include "WPEFramework/interfaces/ISystemServices.h"
 #include "RalfPackageSupport.h"
 #include <cerrno>
 #include <algorithm>
@@ -77,7 +78,8 @@
 #define SCENESET_CONFIG_FILE "/opt/sceneset_app.conf"
 #define SCENESET_SYSTEM_CONFIG_FILE "/etc/sceneset.conf"
 #define SCENESET_OVERRIDE_CONFIG_FILE "/opt/sceneset.conf"
-#define FACTORY_APPS_COPIED_MARKER "/opt/persistent/.sceneset_factory_apps_copied"
+#define FIRMWARE_VERSION_FILE "/version.txt"
+#define LAST_FIRMWARE_VERSION_MARKER "/opt/persistent/.sceneset_last_firmware_version"
 
 namespace { // begin file-private constants and helpers
 constexpr const char* kAppPackageManagerCallsign = "org.rdk.AppPackageManager";
@@ -85,6 +87,7 @@ constexpr const char* kPackageManagerDownloadDirKey = "downloadDir";
 constexpr const char* kPreinstallDirectoryKey = "appPreinstallDirectory";
 constexpr const char* kPreinstallLocationSettingKey = "preinstallLocation";
 constexpr const char* kDefaultHomeAppSettingKey = "defaultHomeApp";
+constexpr const char* kSystemServicesCallsign = "org.rdk.System";
 constexpr const char* kInitialDownloadSweepEnvVar = "SCENESET_INITIAL_DOWNLOAD_SWEEP";
 constexpr const char* kSceneSetSystemConfigEnvVar = "SCENESET_SYSTEM_CONFIG_FILE";
 #if ENABLE_CONFIG_OVERRIDE
@@ -628,36 +631,134 @@ bool SceneSetApp::isReferenceAppInstalled() {
     return false;
 }
 
-bool SceneSetApp::isFactoryAppsCopied() {
-#ifdef UNIT_TEST
-    const std::string markerPath = m_factoryAppsCopiedMarkerOverride.empty()
-        ? std::string(FACTORY_APPS_COPIED_MARKER) : m_factoryAppsCopiedMarkerOverride;
-#else
-    const std::string markerPath = FACTORY_APPS_COPIED_MARKER;
-#endif
-    if (std::filesystem::exists(markerPath)) {
-        std::cout << "Factory apps marker file exists at: " << markerPath << std::endl;
-        return true;
+std::string SceneSetApp::readCurrentFirmwareVersionFromSystem() const {
+    const std::string thunderAccessPath = getThunderAccessPath();
+    auto client = Core::ProxyType<RPC::CommunicatorClient>::Create(
+        Core::NodeId(thunderAccessPath.c_str()));
+    if (!client.IsValid()) {
+        std::cerr << "Failed to create COMRPC client for SystemServices" << std::endl;
+        return "";
     }
-    std::cout << "Factory apps marker file does not exist. This is the first boot." << std::endl;
-    return false;
+
+    Exchange::ISystemServices* systemServices = client->Open<Exchange::ISystemServices>(kSystemServicesCallsign);
+    if (systemServices == nullptr) {
+        std::cerr << "Failed to open ISystemServices interface on " << kSystemServicesCallsign << std::endl;
+        return "";
+    }
+
+    Exchange::ISystemServices::DownloadedFirmwareInfo info{};
+    const Core::hresult result = systemServices->GetDownloadedFirmwareInfo(info);
+    systemServices->Release();
+
+    if (result != Core::ERROR_NONE) {
+        std::cerr << "GetDownloadedFirmwareInfo failed with error code: " << result << std::endl;
+        return "";
+    }
+
+    if (!info.success) {
+        std::cerr << "GetDownloadedFirmwareInfo reported failure: " << info.errorMessage << std::endl;
+        return "";
+    }
+
+    return info.currentFWVersion;
 }
 
-void SceneSetApp::markFactoryAppsCopied() {
-#ifdef UNIT_TEST
-    const std::string markerPath = m_factoryAppsCopiedMarkerOverride.empty()
-        ? std::string(FACTORY_APPS_COPIED_MARKER) : m_factoryAppsCopiedMarkerOverride;
-#else
-    const std::string markerPath = FACTORY_APPS_COPIED_MARKER;
-#endif
-    std::ofstream markerFile(markerPath);
-    if (markerFile.is_open()) {
-        markerFile << "Factory apps copied on first boot" << std::endl;
-        markerFile.close();
-        std::cout << "Factory apps marker file created at: " << markerPath << std::endl;
-    } else {
-        std::cerr << "Failed to create factory apps marker file at: " << markerPath << std::endl;
+std::string SceneSetApp::readCurrentFirmwareVersion() const {
+    // Primary: query the System plugin via COMRPC.
+    const std::string systemVersion = readCurrentFirmwareVersionFromSystem();
+    if (!systemVersion.empty()) {
+        std::cout << "Current firmware version from System plugin: " << systemVersion << std::endl;
+        return systemVersion;
     }
+
+    // Fallback: read directly from the firmware version file on disk.
+#ifdef UNIT_TEST
+    const std::string firmwareVersionFile = m_firmwareVersionFileOverride.empty()
+        ? std::string(FIRMWARE_VERSION_FILE) : m_firmwareVersionFileOverride;
+#else
+    const std::string firmwareVersionFile = FIRMWARE_VERSION_FILE;
+#endif
+    std::cerr << "System plugin unavailable; falling back to firmware version file: " << firmwareVersionFile << std::endl;
+    std::ifstream file(firmwareVersionFile);
+    if (!file.is_open()) {
+        std::cerr << "Failed to open firmware version file: " << firmwareVersionFile << std::endl;
+        return "";
+    }
+    std::string line;
+    while (std::getline(file, line)) {
+        constexpr const char* prefix = "imagename:";
+        constexpr std::size_t prefixLen = 10; // strlen("imagename:")
+        if (line.rfind(prefix, 0) == 0) {
+            std::string version = line.substr(prefixLen);
+            const auto start = version.find_first_not_of(" \t\r\n");
+            if (start == std::string::npos) return "";
+            const auto end = version.find_last_not_of(" \t\r\n");
+            return version.substr(start, end - start + 1);
+        }
+    }
+    std::cerr << "No 'imagename:' line found in firmware version file: " << firmwareVersionFile << std::endl;
+    return "";
+}
+
+std::string SceneSetApp::readLastBootFirmwareVersion() const {
+#ifdef UNIT_TEST
+    const std::string markerPath = m_lastFirmwareVersionMarkerOverride.empty()
+        ? std::string(LAST_FIRMWARE_VERSION_MARKER) : m_lastFirmwareVersionMarkerOverride;
+#else
+    const std::string markerPath = LAST_FIRMWARE_VERSION_MARKER;
+#endif
+    std::ifstream file(markerPath);
+    if (!file.is_open()) {
+        std::cout << "No last firmware version marker found at: " << markerPath << std::endl;
+        return "";
+    }
+    std::string version;
+    std::getline(file, version);
+    const auto start = version.find_first_not_of(" \t\r\n");
+    if (start == std::string::npos) return "";
+    const auto end = version.find_last_not_of(" \t\r\n");
+    return version.substr(start, end - start + 1);
+}
+
+void SceneSetApp::storeCurrentFirmwareVersion() {
+#ifdef UNIT_TEST
+    const std::string markerPath = m_lastFirmwareVersionMarkerOverride.empty()
+        ? std::string(LAST_FIRMWARE_VERSION_MARKER) : m_lastFirmwareVersionMarkerOverride;
+#else
+    const std::string markerPath = LAST_FIRMWARE_VERSION_MARKER;
+#endif
+    const std::string currentVersion = readCurrentFirmwareVersion();
+    std::ofstream file(markerPath);
+    if (file.is_open()) {
+        file << currentVersion << std::endl;
+        file.close();
+        std::cout << "Stored current firmware version '" << currentVersion << "' at: " << markerPath << std::endl;
+    } else {
+        std::cerr << "Failed to store current firmware version at: " << markerPath << std::endl;
+    }
+}
+
+bool SceneSetApp::isFirmwareChanged() const {
+    const std::string currentVersion = readCurrentFirmwareVersion();
+    const std::string lastVersion = readLastBootFirmwareVersion();
+
+    if (currentVersion.empty()) {
+        std::cout << "Could not determine current firmware version. Treating as firmware changed." << std::endl;
+        return true;
+    }
+
+    if (lastVersion.empty()) {
+        std::cout << "No previous firmware version stored. Treating as firmware changed (first boot)." << std::endl;
+        return true;
+    }
+
+    if (currentVersion != lastVersion) {
+        std::cout << "Firmware changed from '" << lastVersion << "' to '" << currentVersion << "'. Treating as first boot." << std::endl;
+        return true;
+    }
+
+    std::cout << "Firmware version unchanged: '" << currentVersion << "'. Normal boot." << std::endl;
+    return false;
 }
 
 bool SceneSetApp::copyFactoryAppsToPreinstall() {
@@ -725,11 +826,11 @@ bool SceneSetApp::copyFactoryAppsToPreinstall() {
 
     if (fileCount > 0) {
         std::cout << "Successfully copied " << fileCount << " factory app bundles to preinstall folder" << std::endl;
-        markFactoryAppsCopied();
+        storeCurrentFirmwareVersion();
         return true;
     } else {
         std::cout << "No factory app bundles found to copy" << std::endl;
-        markFactoryAppsCopied();
+        storeCurrentFirmwareVersion();
         return true;
     }
 }
@@ -985,17 +1086,19 @@ void SceneSetApp::run() {
         std::cerr << "Failed to register for AppManager events" << std::endl;
     }
 
-    // Determine if this is a Factory Setting Reset (FSR) / first boot scenario
-    bool isFactoryReset = !isFactoryAppsCopied();
+    // Determine if this is a Factory Setting Reset (FSR) / first boot scenario.
+    // A first boot is triggered whenever the current firmware version differs from
+    // the firmware version recorded during the previous boot.
+    bool isFactoryReset = isFirmwareChanged();
 
     // Copy factory apps to preinstall folder on first boot only
     if (isFactoryReset) {
-        std::cout << "First boot/Factory reset detected. Copying factory apps to preinstall folder." << std::endl;
+        std::cout << "Firmware change detected (first boot). Copying factory apps to preinstall folder." << std::endl;
         if (!copyFactoryAppsToPreinstall()) {
             std::cerr << "Failed to copy factory apps. Continuing with preinstall anyway." << std::endl;
         }
     } else {
-        std::cout << "Factory apps already copied on first boot. Skipping copy." << std::endl;
+        std::cout << "Firmware version unchanged. Skipping factory app copy." << std::endl;
     }
 
     // Start preinstall asynchronously.

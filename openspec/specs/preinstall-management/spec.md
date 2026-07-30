@@ -10,9 +10,12 @@ At every boot, SceneSet triggers preinstallation of app bundles via PreinstallMa
 
 ### 1. First Boot / Factory Settings Reset (FSR) Detection
 
-- SceneSet detects a first boot by checking for the absence of a marker file at `/opt/persistent/.sceneset_factory_apps_copied`.
-- If the marker file is absent, the boot is treated as an FSR.
-- If the marker file is present, the boot is treated as a normal (non-FSR) boot.
+- SceneSet detects a first boot by comparing the current firmware version against the firmware version recorded during the previous boot.
+- The current firmware version is read from `/version.txt` by extracting the value of the `imagename:` line.
+- The previously recorded firmware version is read from `/opt/persistent/.sceneset_last_firmware_version`.
+- If the current firmware version differs from the recorded version, or if no recorded version exists, the boot is treated as an FSR.
+- If the current firmware version matches the recorded version, the boot is treated as a normal (non-FSR) boot.
+- If the firmware version file cannot be read or contains no `imagename:` line, the boot is treated as an FSR.
 
 ---
 
@@ -23,8 +26,8 @@ On an FSR boot:
 1. SceneSet copies all regular files from the compile-time `FACTORY_APP_PATH` directory into the configured preinstall directory.
 2. Subdirectories and non-regular files within `FACTORY_APP_PATH` are skipped.
 3. Existing files in the preinstall directory are overwritten.
-4. After copying (even if no files were found), SceneSet creates the marker file at `/opt/persistent/.sceneset_factory_apps_copied`.
-5. If the marker file cannot be created, SceneSet logs an error but continues.
+4. After copying (even if no files were found), SceneSet writes the current firmware version to `/opt/persistent/.sceneset_last_firmware_version`.
+5. If the firmware version marker file cannot be created, SceneSet logs an error but continues.
 
 **Failure modes:**
 - If `FACTORY_APP_PATH` does not exist, SceneSet logs an error and continues to the preinstall step anyway.

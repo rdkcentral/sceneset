@@ -257,7 +257,7 @@ flowchart TD
 | `/opt/sceneset_app.conf` | Runtime app ID override | None |
 | `/etc/sceneset.conf` | System-level configuration | `ENABLE_SYSTEM_CONFIG=ON` |
 | `/opt/sceneset.conf` | Override layer | `ENABLE_CONFIG_OVERRIDE=ON` |
-| `/opt/persistent/.sceneset_factory_apps_copied` | First-boot marker (internal) | None |
+| `/opt/persistent/.sceneset_last_firmware_version` | Records firmware version from last boot; used to detect firmware changes at startup (internal) | None |
 
 ---
 
@@ -364,8 +364,11 @@ cat /opt/sceneset_app.conf
 cat /etc/sceneset.conf 2>/dev/null
 cat /opt/sceneset.conf 2>/dev/null
 
-# Check marker file
-ls -la /opt/persistent/.sceneset_factory_apps_copied
+# Check last boot firmware version marker
+cat /opt/persistent/.sceneset_last_firmware_version
+
+# Check current firmware version
+cat /version.txt
 ```
 
 ---
