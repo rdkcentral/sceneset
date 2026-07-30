@@ -66,6 +66,8 @@ public:
     bool startPreinstall(bool forceInstall);
     bool isReferenceAppInstalled();
     void checkAndLaunchIfAlreadyInstalled();
+    bool isFactoryAppsCopied();
+    void markFactoryAppsCopied();
     bool isFirmwareChanged() const;
     std::string readCurrentFirmwareVersionFromSystem() const;
     std::string readCurrentFirmwareVersion() const;
@@ -154,6 +156,7 @@ private:
 #ifdef UNIT_TEST
     static void setMetadataExtractorForTesting(bool (*extractor)(const std::filesystem::path&, std::string&, std::string&));
     static void resetMetadataExtractorForTesting();
+    std::string m_factoryAppsCopiedMarkerOverride;
     std::string m_firmwareVersionFileOverride;
     std::string m_lastFirmwareVersionMarkerOverride;
     std::string m_factoryAppPathOverride;

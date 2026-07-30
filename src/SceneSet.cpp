@@ -18,7 +18,6 @@
  */
 
 #include "SceneSet.h"
-#include "WPEFramework/interfaces/ISystemServices.h"
 #include "RalfPackageSupport.h"
 #include <cerrno>
 #include <algorithm>
@@ -45,6 +44,14 @@
 
 #if SCENESET_TELEMETRY_METRICS_SUPPORT
 #include <telemetry_busmessage_sender.h>
+#endif
+
+#ifndef ENABLE_FIRMWARE_CHANGE_DETECTION
+#define ENABLE_FIRMWARE_CHANGE_DETECTION 0
+#endif
+
+#if ENABLE_FIRMWARE_CHANGE_DETECTION
+#include "WPEFramework/interfaces/ISystemServices.h"
 #endif
 
 #ifndef GIT_SHORT_SHA
@@ -80,6 +87,7 @@
 #define SCENESET_OVERRIDE_CONFIG_FILE "/opt/sceneset.conf"
 #define FIRMWARE_VERSION_FILE "/version.txt"
 #define LAST_FIRMWARE_VERSION_MARKER "/opt/persistent/.sceneset_last_firmware_version"
+#define FACTORY_APPS_COPIED_MARKER "/opt/persistent/.sceneset_factory_apps_copied"
 
 namespace { // begin file-private constants and helpers
 constexpr const char* kAppPackageManagerCallsign = "org.rdk.AppPackageManager";
@@ -87,7 +95,9 @@ constexpr const char* kPackageManagerDownloadDirKey = "downloadDir";
 constexpr const char* kPreinstallDirectoryKey = "appPreinstallDirectory";
 constexpr const char* kPreinstallLocationSettingKey = "preinstallLocation";
 constexpr const char* kDefaultHomeAppSettingKey = "defaultHomeApp";
+#if ENABLE_FIRMWARE_CHANGE_DETECTION
 constexpr const char* kSystemServicesCallsign = "org.rdk.System";
+#endif
 constexpr const char* kInitialDownloadSweepEnvVar = "SCENESET_INITIAL_DOWNLOAD_SWEEP";
 constexpr const char* kSceneSetSystemConfigEnvVar = "SCENESET_SYSTEM_CONFIG_FILE";
 #if ENABLE_CONFIG_OVERRIDE
@@ -631,6 +641,39 @@ bool SceneSetApp::isReferenceAppInstalled() {
     return false;
 }
 
+bool SceneSetApp::isFactoryAppsCopied() {
+#ifdef UNIT_TEST
+    const std::string markerPath = m_factoryAppsCopiedMarkerOverride.empty()
+        ? std::string(FACTORY_APPS_COPIED_MARKER) : m_factoryAppsCopiedMarkerOverride;
+#else
+    const std::string markerPath = FACTORY_APPS_COPIED_MARKER;
+#endif
+    if (std::filesystem::exists(markerPath)) {
+        std::cout << "Factory apps marker file exists at: " << markerPath << std::endl;
+        return true;
+    }
+    std::cout << "Factory apps marker file does not exist. This is the first boot." << std::endl;
+    return false;
+}
+
+void SceneSetApp::markFactoryAppsCopied() {
+#ifdef UNIT_TEST
+    const std::string markerPath = m_factoryAppsCopiedMarkerOverride.empty()
+        ? std::string(FACTORY_APPS_COPIED_MARKER) : m_factoryAppsCopiedMarkerOverride;
+#else
+    const std::string markerPath = FACTORY_APPS_COPIED_MARKER;
+#endif
+    std::ofstream markerFile(markerPath);
+    if (markerFile.is_open()) {
+        markerFile << "Factory apps copied on first boot" << std::endl;
+        markerFile.close();
+        std::cout << "Factory apps marker file created at: " << markerPath << std::endl;
+    } else {
+        std::cerr << "Failed to create factory apps marker file at: " << markerPath << std::endl;
+    }
+}
+
+#if ENABLE_FIRMWARE_CHANGE_DETECTION
 std::string SceneSetApp::readCurrentFirmwareVersionFromSystem() const {
     const std::string thunderAccessPath = getThunderAccessPath();
     auto client = Core::ProxyType<RPC::CommunicatorClient>::Create(
@@ -760,6 +803,7 @@ bool SceneSetApp::isFirmwareChanged() const {
     std::cout << "Firmware version unchanged: '" << currentVersion << "'. Normal boot." << std::endl;
     return false;
 }
+#endif // ENABLE_FIRMWARE_CHANGE_DETECTION
 
 bool SceneSetApp::copyFactoryAppsToPreinstall() {
     namespace fs = std::filesystem;
@@ -826,13 +870,15 @@ bool SceneSetApp::copyFactoryAppsToPreinstall() {
 
     if (fileCount > 0) {
         std::cout << "Successfully copied " << fileCount << " factory app bundles to preinstall folder" << std::endl;
-        storeCurrentFirmwareVersion();
-        return true;
     } else {
         std::cout << "No factory app bundles found to copy" << std::endl;
-        storeCurrentFirmwareVersion();
-        return true;
     }
+#if ENABLE_FIRMWARE_CHANGE_DETECTION
+    storeCurrentFirmwareVersion();
+#else
+    markFactoryAppsCopied();
+#endif
+    return true;
 }
 
 void SceneSetApp::cleanupPreinstallFolder() {
@@ -1087,18 +1133,23 @@ void SceneSetApp::run() {
     }
 
     // Determine if this is a Factory Setting Reset (FSR) / first boot scenario.
+#if ENABLE_FIRMWARE_CHANGE_DETECTION
     // A first boot is triggered whenever the current firmware version differs from
     // the firmware version recorded during the previous boot.
     bool isFactoryReset = isFirmwareChanged();
+#else
+    // A first boot is detected via the persistent factory-apps-copied marker file.
+    bool isFactoryReset = !isFactoryAppsCopied();
+#endif
 
     // Copy factory apps to preinstall folder on first boot only
     if (isFactoryReset) {
-        std::cout << "Firmware change detected (first boot). Copying factory apps to preinstall folder." << std::endl;
+        std::cout << "First boot/Factory reset detected. Copying factory apps to preinstall folder." << std::endl;
         if (!copyFactoryAppsToPreinstall()) {
             std::cerr << "Failed to copy factory apps. Continuing with preinstall anyway." << std::endl;
         }
     } else {
-        std::cout << "Firmware version unchanged. Skipping factory app copy." << std::endl;
+        std::cout << "Not a first boot. Skipping factory app copy." << std::endl;
     }
 
     // Start preinstall asynchronously.
