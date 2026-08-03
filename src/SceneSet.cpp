@@ -764,13 +764,18 @@ std::string SceneSetApp::readLastBootFirmwareVersion() const {
 }
 
 void SceneSetApp::storeCurrentFirmwareVersion() {
+    const std::string currentVersion = readCurrentFirmwareVersion();
+    if (currentVersion.empty()) {
+        // Don't persist an unknown version; next boot retries the first-boot flow.
+        std::cerr << "Current firmware version unavailable; not updating last-firmware-version marker." << std::endl;
+        return;
+    }
 #ifdef UNIT_TEST
     const std::string markerPath = m_lastFirmwareVersionMarkerOverride.empty()
         ? std::string(LAST_FIRMWARE_VERSION_MARKER) : m_lastFirmwareVersionMarkerOverride;
 #else
     const std::string markerPath = LAST_FIRMWARE_VERSION_MARKER;
 #endif
-    const std::string currentVersion = readCurrentFirmwareVersion();
     std::ofstream file(markerPath);
     if (file.is_open()) {
         file << currentVersion << std::endl;
@@ -873,9 +878,8 @@ bool SceneSetApp::copyFactoryAppsToPreinstall() {
     } else {
         std::cout << "No factory app bundles found to copy" << std::endl;
     }
-#if ENABLE_FIRMWARE_CHANGE_DETECTION
-    storeCurrentFirmwareVersion();
-#else
+#if !ENABLE_FIRMWARE_CHANGE_DETECTION
+    // Firmware path records the version only after a successful preinstall (completeStartupAfterPreinstall).
     markFactoryAppsCopied();
 #endif
     return true;
@@ -942,6 +946,10 @@ void SceneSetApp::completeStartupAfterPreinstall() {
     std::cout << "Preinstall phase finished. Continuing startup flow." << std::endl;
     if (isStartupPreinstallSucceed()) {
         cleanupPreinstallFolder();
+#if ENABLE_FIRMWARE_CHANGE_DETECTION
+        // Record the firmware as the new datasource only after preinstall succeeds.
+        storeCurrentFirmwareVersion();
+#endif
     } else {
         std::cerr << "Startup preinstall reported a failure state before completion. Preserving files in preinstall folder for retry." << std::endl;
     }
