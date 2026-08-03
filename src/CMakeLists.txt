@@ -97,6 +97,8 @@ set(RESTART_HOMEAPP_ALWAYS OFF CACHE BOOL "Restart reference app on every TERMIN
 set(DISABLE_CRASH_RECOVERY OFF CACHE BOOL "Disable crash-triggered restart of the reference app. Use when an external component (e.g. HomeAppManager) owns crash recovery.")
 set(SCENESET_TELEMETRY_METRICS_SUPPORT OFF CACHE BOOL "Enable SceneSet telemetry marker publication via T2")
 
+target_compile_definitions(${TARGET} PRIVATE DISABLE_CRASH_RECOVERY=$<BOOL:${DISABLE_CRASH_RECOVERY}>)
+
 include(GNUInstallDirs)
 target_include_directories(${TARGET} PRIVATE ${COMMON_INCLUDE_DIRS})
 target_link_libraries(${TARGET} PRIVATE ${COMMON_LIBRARIES} systemd)
