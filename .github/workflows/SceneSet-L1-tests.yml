@@ -202,7 +202,8 @@ jobs:
           # Copy the IAppManager.h from entservices-apis
           cp entservices-apis/apis/AppManager/IAppManager.h $GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/
           cp entservices-apis/apis/PreinstallManager/IPreinstallManager.h $GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/
-          cp entservices-apis/apis/PackageManager/IAppPackageManager.h $GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/
+          cp entservices-apis/apis/AppPackageManager/IAppPackageManager.h $GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/
+          cp entservices-apis/apis/SystemServices/ISystemServices.h $GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/
           
           # Create a basic Ids.h file
           cat > $GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/Ids.h << 'EOF'
@@ -237,7 +238,12 @@ jobs:
 
               // Interface IDs for AppPackageManager (IPackageHandler)
               ID_PACKAGE_HANDLER                 = 0x00000240,
-              ID_PACKAGE_LOCK_ITERATOR           = 0x00000241
+              ID_PACKAGE_LOCK_ITERATOR           = 0x00000241,
+
+              // Interface IDs for SystemServices
+              ID_SYSTEMSERVICES                        = 0x00000250,
+              ID_SYSTEMSERVICES_NOTIFICATION           = 0x00000251,
+              ID_SYSTEMSERVICES_WAKEUPSOURCES_ITERATOR = 0x00000252
           };
 
           } // namespace Exchange
@@ -249,6 +255,9 @@ jobs:
 
           # Fix the missing enum value in IAppManager.h
           sed -i 's/APP_ERROR_REASON_UNKNOWN/APP_ERROR_REASON_NONE = 0, APP_ERROR_REASON_UNKNOWN/g' $GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/IAppManager.h
+
+          # Make ISystemServices.h self-contained for the interface IDs it references
+          sed -i '1i#include "Ids.h"' $GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/ISystemServices.h
       
       - name: Build SceneSet L1 Tests
         run: >
