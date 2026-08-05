@@ -82,6 +82,10 @@
 #define RESTART_HOMEAPP_ALWAYS 0
 #endif
 
+#ifndef DISABLE_CRASH_RECOVERY
+#define DISABLE_CRASH_RECOVERY 0
+#endif
+
 #define SCENESET_CONFIG_FILE "/opt/sceneset_app.conf"
 #define SCENESET_SYSTEM_CONFIG_FILE "/etc/sceneset.conf"
 #define SCENESET_OVERRIDE_CONFIG_FILE "/opt/sceneset.conf"
@@ -1168,6 +1172,8 @@ void SceneSetApp::run() {
     std::cout << "Starting preinstall process and waiting for OnPreinstallationComplete" << std::endl;
     if (!startPreinstall(isFactoryReset)) {
         std::cerr << "Failed to start preinstall process. Continuing startup flow without deleting preinstall files." << std::endl;
+        // Preinstall never ran: mark it failed so the folder is preserved and the firmware datasource is not advanced.
+        m_startupPreinstallState.hasFailure = true;
         completeStartupAfterPreinstall();
     } else {
         if (!preinstallEventsRegistered) {
