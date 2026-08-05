@@ -272,7 +272,7 @@ Description=Application launcher service
 Requires=wpeframework-appmanager.service
 After=wpeframework-appmanager.service
 
-ConditionPathExists=/opt/ai2managers
+ConditionPathExists=/etc/rdkappmanagers
 
 [Service]
 Type=notify
@@ -291,7 +291,7 @@ WantedBy=multi-user.target
 | `Type` | `notify` | Service uses `sd_notify()` to signal readiness |
 | `Requires` | `wpeframework-appmanager.service` | Ensures AppManager is running |
 | `After` | `wpeframework-appmanager.service` | Start order dependency |
-| `ConditionPathExists` | `/opt/ai2managers` | Service only starts if path exists |
+| `ConditionPathExists` | `/etc/rdkappmanagers` | Service only starts if path exists |
 | `RemainAfterExit` | `Yes` | Service remains active after main process exits |
 
 ### Service Management
