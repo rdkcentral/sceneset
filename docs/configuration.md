@@ -47,6 +47,7 @@ flowchart LR
 | `ENABLE_SYSTEM_CONFIG` | Bool | `OFF` | Enable reading `/etc/sceneset.conf` |
 | `ENABLE_CONFIG_OVERRIDE` | Bool | `OFF` | Enable `/opt/sceneset.conf` override layer |
 | `RESTART_HOMEAPP_ALWAYS` | Bool | `OFF` | Restart app on any TERMINATING→UNLOADED transition |
+| `DISABLE_HOMEAPP_RESTART_ON_NEW_VERSION` | Bool | `OFF` | Disable auto kill/relaunch when a newer reference app version is installed while running |
 | `SCENESET_TELEMETRY_METRICS_SUPPORT` | Bool | `OFF` | Enable SceneSet T2 launch/relaunch telemetry marker emission |
 | `DISABLE_REFERENCE_APP_UPDATE` | Bool | `OFF` | Disable OTA update monitoring |
 
