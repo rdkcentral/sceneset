@@ -3,7 +3,7 @@ Description=Application launcher service
 Requires=wpeframework-appmanager.service
 After=wpeframework-appmanager.service
 
-ConditionPathExists=/opt/ai2managers
+ConditionPathExists=/etc/rdkappmanagers
 
 [Service]
 Type=notify

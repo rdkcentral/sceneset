@@ -86,6 +86,10 @@
 #define DISABLE_CRASH_RECOVERY 0
 #endif
 
+#ifndef DISABLE_HOMEAPP_RESTART_ON_NEW_VERSION
+#define DISABLE_HOMEAPP_RESTART_ON_NEW_VERSION 0
+#endif
+
 #define SCENESET_CONFIG_FILE "/opt/sceneset_app.conf"
 #define SCENESET_SYSTEM_CONFIG_FILE "/etc/sceneset.conf"
 #define SCENESET_OVERRIDE_CONFIG_FILE "/opt/sceneset.conf"
@@ -1198,6 +1202,10 @@ void SceneSetApp::AppManagerEventHandler::OnAppInstalled(const string &appId, co
 
     SceneSetApp& instance = SceneSetApp::getInstance();
     if (!instance.m_referenceAppId.empty() && appId == instance.m_referenceAppId) {
+#if DISABLE_HOMEAPP_RESTART_ON_NEW_VERSION
+        std::cout << "New version of reference app '" << appId << "' (version: " << version
+                  << ") installed. Auto kill/relaunch feature on install is disabled." << std::endl;
+#else
         if (instance.m_appLaunched) {
             std::cout << "New version of reference app '" << appId << "' (version: " << version << ") installed. App is running, killing and restarting reference app." << std::endl;
             // Kill the running app  before launching the new version
@@ -1211,6 +1219,7 @@ void SceneSetApp::AppManagerEventHandler::OnAppInstalled(const string &appId, co
                 instance.m_pendingRestart = false;
             }
         }
+#endif
     }
 }
 
