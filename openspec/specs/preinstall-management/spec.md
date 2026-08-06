@@ -10,9 +10,20 @@ At every boot, SceneSet triggers preinstallation of app bundles via PreinstallMa
 
 ### 1. First Boot / Factory Settings Reset (FSR) Detection
 
+First-boot detection is selected at build time via the `ENABLE_FIRMWARE_CHANGE_DETECTION` CMake option.
+
+**Default (`ENABLE_FIRMWARE_CHANGE_DETECTION=OFF`) — marker-file strategy:**
 - SceneSet detects a first boot by checking for the absence of a marker file at `/opt/persistent/.sceneset_factory_apps_copied`.
 - If the marker file is absent, the boot is treated as an FSR.
 - If the marker file is present, the boot is treated as a normal (non-FSR) boot.
+
+**Opt-in (`ENABLE_FIRMWARE_CHANGE_DETECTION=ON`) — firmware-version strategy:**
+- SceneSet detects a first boot by comparing the current firmware version against the firmware version recorded during the previous boot.
+- The current firmware version is obtained from the `org.rdk.System` plugin via `ISystemServices::GetDownloadedFirmwareInfo` (`currentFWVersion`), falling back to the `imagename:` line of `/version.txt` when the plugin is unavailable.
+- The previously recorded firmware version is read from `/opt/persistent/.sceneset_last_firmware_version`.
+- If the current firmware version differs from the recorded version, or if no recorded version exists, the boot is treated as an FSR.
+- If the current firmware version matches the recorded version, the boot is treated as a normal (non-FSR) boot.
+- If the current firmware version cannot be determined, the boot is treated as an FSR.
 
 ---
 
@@ -23,7 +34,7 @@ On an FSR boot:
 1. SceneSet copies all regular files from the compile-time `FACTORY_APP_PATH` directory into the configured preinstall directory.
 2. Subdirectories and non-regular files within `FACTORY_APP_PATH` are skipped.
 3. Existing files in the preinstall directory are overwritten.
-4. After copying (even if no files were found), SceneSet creates the marker file at `/opt/persistent/.sceneset_factory_apps_copied`.
+4. When `ENABLE_FIRMWARE_CHANGE_DETECTION=OFF`: after copying (even if no files were found), SceneSet creates the marker file `/opt/persistent/.sceneset_factory_apps_copied`. When `ENABLE_FIRMWARE_CHANGE_DETECTION=ON`: SceneSet does **not** record the firmware version here — it is recorded only after a successful preinstall (see Post-Preinstall Actions), so a failed preinstall re-triggers the first-boot flow on the next boot.
 5. If the marker file cannot be created, SceneSet logs an error but continues.
 
 **Failure modes:**
@@ -60,8 +71,8 @@ When `OnPreinstallationComplete` fires:
 
 | Preinstall result | Action |
 |---|---|
-| All packages succeeded (`INSTALLED` or `INSTALLING`) | Clean up the preinstall directory; then check if reference app is installed and launch it |
-| Any package failed | Preserve the preinstall directory (for retry on next boot); still check if app is installed and launch it |
+| All packages succeeded (`INSTALLED` or `INSTALLING`) | Clean up the preinstall directory; when `ENABLE_FIRMWARE_CHANGE_DETECTION=ON`, record the current firmware version to `/opt/persistent/.sceneset_last_firmware_version` (skipped if the version is unavailable); then check if reference app is installed and launch it |
+| Any package failed | Preserve the preinstall directory (for retry on next boot); do **not** record the firmware version, so the next boot re-runs the first-boot flow; still check if app is installed and launch it |
 
 **Failure mode:** If `OnPreinstallationComplete` is never received (e.g. PreinstallManager crashes), the startup flow stalls. SceneSet does not have a timeout or fallback for this case.
 

@@ -117,6 +117,14 @@ public:
         return app.getInstalledReferenceAppVersion();
     }
 
+    static void SetFirmwareVersionFile(SceneSetApp& app, const std::string& filePath) {
+        app.m_firmwareVersionFileOverride = filePath;
+    }
+
+    static void SetLastFirmwareVersionMarker(SceneSetApp& app, const std::string& markerPath) {
+        app.m_lastFirmwareVersionMarkerOverride = markerPath;
+    }
+
     static void SetFactoryAppsCopiedMarker(SceneSetApp& app, const std::string& markerPath) {
         app.m_factoryAppsCopiedMarkerOverride = markerPath;
     }
@@ -964,7 +972,215 @@ TEST_F(SceneSetTest, GetInstalledReferenceAppVersionReturnsEmptyWhenAppManagerIs
     EXPECT_TRUE(version.empty());
 }
 
-// --- isFactoryAppsCopied tests ---
+// --- isFirmwareChanged / firmware version tests ---
+
+// Test isFirmwareChanged returns true when no previous firmware version is stored
+TEST_F(SceneSetTest, IsFirmwareChangedReturnsTrueWhenNoPreviousFirmwareStored) {
+    SceneSetApp app;
+    const auto versionFile = MakeUniqueTempPath("sceneset_version_txt");
+    const auto markerPath = MakeUniqueTempPath("sceneset_last_fw_version");
+
+    {
+        std::ofstream f(versionFile);
+        f << "imagename:TEST_FW_1.0" << std::endl;
+    }
+
+    std::error_code ec;
+    std::filesystem::remove(markerPath, ec);
+
+    SceneSetAppTestPeer::SetFirmwareVersionFile(app, versionFile.string());
+    SceneSetAppTestPeer::SetLastFirmwareVersionMarker(app, markerPath.string());
+    EXPECT_TRUE(app.isFirmwareChanged());
+
+    std::filesystem::remove(versionFile, ec);
+}
+
+// Test isFirmwareChanged returns false when current firmware matches the stored version
+TEST_F(SceneSetTest, IsFirmwareChangedReturnsFalseWhenFirmwareUnchanged) {
+    SceneSetApp app;
+    const auto versionFile = MakeUniqueTempPath("sceneset_version_txt");
+    const auto markerPath = MakeUniqueTempPath("sceneset_last_fw_version");
+
+    {
+        std::ofstream f(versionFile);
+        f << "imagename:TEST_FW_2.0" << std::endl;
+    }
+    {
+        std::ofstream m(markerPath);
+        m << "TEST_FW_2.0" << std::endl;
+    }
+
+    SceneSetAppTestPeer::SetFirmwareVersionFile(app, versionFile.string());
+    SceneSetAppTestPeer::SetLastFirmwareVersionMarker(app, markerPath.string());
+    EXPECT_FALSE(app.isFirmwareChanged());
+
+    std::error_code ec;
+    std::filesystem::remove(versionFile, ec);
+    std::filesystem::remove(markerPath, ec);
+}
+
+// Test isFirmwareChanged returns true when current firmware differs from stored version
+TEST_F(SceneSetTest, IsFirmwareChangedReturnsTrueWhenFirmwareDiffers) {
+    SceneSetApp app;
+    const auto versionFile = MakeUniqueTempPath("sceneset_version_txt");
+    const auto markerPath = MakeUniqueTempPath("sceneset_last_fw_version");
+
+    {
+        std::ofstream f(versionFile);
+        f << "imagename:TEST_FW_3.0" << std::endl;
+    }
+    {
+        std::ofstream m(markerPath);
+        m << "TEST_FW_2.0" << std::endl;
+    }
+
+    SceneSetAppTestPeer::SetFirmwareVersionFile(app, versionFile.string());
+    SceneSetAppTestPeer::SetLastFirmwareVersionMarker(app, markerPath.string());
+    EXPECT_TRUE(app.isFirmwareChanged());
+
+    std::error_code ec;
+    std::filesystem::remove(versionFile, ec);
+    std::filesystem::remove(markerPath, ec);
+}
+
+// Test isFirmwareChanged returns true when firmware version file cannot be read
+TEST_F(SceneSetTest, IsFirmwareChangedReturnsTrueWhenVersionFileNotFound) {
+    SceneSetApp app;
+    const auto versionFile = MakeUniqueTempPath("sceneset_version_txt_missing");
+    const auto markerPath = MakeUniqueTempPath("sceneset_last_fw_version");
+
+    std::error_code ec;
+    std::filesystem::remove(versionFile, ec);
+    {
+        std::ofstream m(markerPath);
+        m << "TEST_FW_2.0" << std::endl;
+    }
+
+    SceneSetAppTestPeer::SetFirmwareVersionFile(app, versionFile.string());
+    SceneSetAppTestPeer::SetLastFirmwareVersionMarker(app, markerPath.string());
+    EXPECT_TRUE(app.isFirmwareChanged());
+
+    std::filesystem::remove(markerPath, ec);
+}
+
+// Test readCurrentFirmwareVersion extracts imagename from version file
+TEST_F(SceneSetTest, ReadCurrentFirmwareVersionExtractsImageName) {
+    SceneSetApp app;
+    const auto versionFile = MakeUniqueTempPath("sceneset_version_txt");
+
+    {
+        std::ofstream f(versionFile);
+        f << "imagename:SCXI11BEI_MIDDLEWARE_DEV_develop_20260722111523" << std::endl;
+    }
+
+    SceneSetAppTestPeer::SetFirmwareVersionFile(app, versionFile.string());
+    EXPECT_EQ(app.readCurrentFirmwareVersion(), "SCXI11BEI_MIDDLEWARE_DEV_develop_20260722111523");
+
+    std::error_code ec;
+    std::filesystem::remove(versionFile, ec);
+}
+
+// Test readCurrentFirmwareVersion returns empty when version file is missing
+TEST_F(SceneSetTest, ReadCurrentFirmwareVersionReturnsEmptyWhenFileMissing) {
+    SceneSetApp app;
+    const auto versionFile = MakeUniqueTempPath("sceneset_version_txt_missing");
+
+    std::error_code ec;
+    std::filesystem::remove(versionFile, ec);
+
+    SceneSetAppTestPeer::SetFirmwareVersionFile(app, versionFile.string());
+    EXPECT_TRUE(app.readCurrentFirmwareVersion().empty());
+}
+
+// Test readCurrentFirmwareVersion returns empty when imagename line is absent
+TEST_F(SceneSetTest, ReadCurrentFirmwareVersionReturnsEmptyWhenNoImageNameLine) {
+    SceneSetApp app;
+    const auto versionFile = MakeUniqueTempPath("sceneset_version_txt");
+
+    {
+        std::ofstream f(versionFile);
+        f << "some_other_key:some_value" << std::endl;
+        f << "another_key:another_value" << std::endl;
+    }
+
+    SceneSetAppTestPeer::SetFirmwareVersionFile(app, versionFile.string());
+    EXPECT_TRUE(app.readCurrentFirmwareVersion().empty());
+
+    std::error_code ec;
+    std::filesystem::remove(versionFile, ec);
+}
+
+// --- storeCurrentFirmwareVersion tests ---
+
+// Test storeCurrentFirmwareVersion creates the marker file
+TEST_F(SceneSetTest, StoreCurrentFirmwareVersionCreatesMarkerFile) {
+    SceneSetApp app;
+    const auto versionFile = MakeUniqueTempPath("sceneset_version_txt");
+    const auto markerPath = MakeUniqueTempPath("sceneset_last_fw_version");
+
+    {
+        std::ofstream f(versionFile);
+        f << "imagename:TEST_FW_1.0" << std::endl;
+    }
+
+    std::error_code ec;
+    std::filesystem::remove(markerPath, ec);
+
+    SceneSetAppTestPeer::SetFirmwareVersionFile(app, versionFile.string());
+    SceneSetAppTestPeer::SetLastFirmwareVersionMarker(app, markerPath.string());
+    app.storeCurrentFirmwareVersion();
+
+    EXPECT_TRUE(std::filesystem::exists(markerPath));
+
+    std::filesystem::remove(versionFile, ec);
+    std::filesystem::remove(markerPath, ec);
+}
+
+// Test storeCurrentFirmwareVersion causes isFirmwareChanged to return false on same firmware
+TEST_F(SceneSetTest, StoreCurrentFirmwareVersionCausesIsFirmwareChangedToReturnFalse) {
+    SceneSetApp app;
+    const auto versionFile = MakeUniqueTempPath("sceneset_version_txt");
+    const auto markerPath = MakeUniqueTempPath("sceneset_last_fw_version");
+
+    {
+        std::ofstream f(versionFile);
+        f << "imagename:TEST_FW_1.0" << std::endl;
+    }
+
+    std::error_code ec;
+    std::filesystem::remove(markerPath, ec);
+
+    SceneSetAppTestPeer::SetFirmwareVersionFile(app, versionFile.string());
+    SceneSetAppTestPeer::SetLastFirmwareVersionMarker(app, markerPath.string());
+
+    EXPECT_TRUE(app.isFirmwareChanged());
+    app.storeCurrentFirmwareVersion();
+    EXPECT_FALSE(app.isFirmwareChanged());
+
+    std::filesystem::remove(versionFile, ec);
+    std::filesystem::remove(markerPath, ec);
+}
+
+// Test storeCurrentFirmwareVersion does not create the marker when version is unavailable
+TEST_F(SceneSetTest, StoreCurrentFirmwareVersionSkipsMarkerWhenVersionUnavailable) {
+    SceneSetApp app;
+    const auto versionFile = MakeUniqueTempPath("sceneset_version_txt_missing");
+    const auto markerPath = MakeUniqueTempPath("sceneset_last_fw_version");
+
+    std::error_code ec;
+    std::filesystem::remove(versionFile, ec);
+    std::filesystem::remove(markerPath, ec);
+
+    SceneSetAppTestPeer::SetFirmwareVersionFile(app, versionFile.string());
+    SceneSetAppTestPeer::SetLastFirmwareVersionMarker(app, markerPath.string());
+    app.storeCurrentFirmwareVersion();
+
+    EXPECT_FALSE(std::filesystem::exists(markerPath));
+
+    std::filesystem::remove(markerPath, ec);
+}
+
+// --- isFactoryAppsCopied / markFactoryAppsCopied tests (marker strategy, ENABLE_FIRMWARE_CHANGE_DETECTION=OFF / RDK-M) ---
 
 // Test isFactoryAppsCopied returns false when marker file does not exist
 TEST_F(SceneSetTest, IsFactoryAppsCopiedReturnsFalseWhenMarkerDoesNotExist) {
@@ -994,8 +1210,6 @@ TEST_F(SceneSetTest, IsFactoryAppsCopiedReturnsTrueWhenMarkerExists) {
     std::error_code ec;
     std::filesystem::remove(markerPath, ec);
 }
-
-// --- markFactoryAppsCopied tests ---
 
 // Test markFactoryAppsCopied creates the marker file
 TEST_F(SceneSetTest, MarkFactoryAppsCopiedCreatesMarkerFile) {
@@ -1038,21 +1252,16 @@ TEST_F(SceneSetTest, CopyFactoryAppsToPreinstallReturnsFalseWhenSourceDoesNotExi
     const auto rootDir = MakeUniqueTempPath("sceneset_factory_copy_no_src");
     const auto nonExistentSource = rootDir / "factory_apps";
     const auto preinstallDir = rootDir / "preinstall";
-    const auto markerPath = MakeUniqueTempPath("sceneset_factory_marker");
 
     std::error_code ec;
     std::filesystem::remove_all(nonExistentSource, ec);
-    std::filesystem::remove(markerPath, ec);
 
     SceneSetAppTestPeer::SetFactoryAppPath(app, nonExistentSource.string());
     SceneSetAppTestPeer::SetPreinstallDirectory(app, preinstallDir.string());
-    SceneSetAppTestPeer::SetFactoryAppsCopiedMarker(app, markerPath.string());
 
     EXPECT_FALSE(app.copyFactoryAppsToPreinstall());
-    EXPECT_FALSE(std::filesystem::exists(markerPath));
 
     std::filesystem::remove_all(rootDir, ec);
-    std::filesystem::remove(markerPath, ec);
 }
 
 // Test copyFactoryAppsToPreinstall returns true when source directory is empty
@@ -1061,23 +1270,18 @@ TEST_F(SceneSetTest, CopyFactoryAppsToPreinstallReturnsTrueWhenSourceIsEmpty) {
     const auto rootDir = MakeUniqueTempPath("sceneset_factory_copy_empty_src");
     const auto sourceDir = rootDir / "factory_apps";
     const auto preinstallDir = rootDir / "preinstall";
-    const auto markerPath = MakeUniqueTempPath("sceneset_factory_marker");
 
     std::error_code ec;
     std::filesystem::create_directories(sourceDir, ec);
     std::filesystem::create_directories(preinstallDir, ec);
     ASSERT_FALSE(ec);
-    std::filesystem::remove(markerPath, ec);
 
     SceneSetAppTestPeer::SetFactoryAppPath(app, sourceDir.string());
     SceneSetAppTestPeer::SetPreinstallDirectory(app, preinstallDir.string());
-    SceneSetAppTestPeer::SetFactoryAppsCopiedMarker(app, markerPath.string());
 
     EXPECT_TRUE(app.copyFactoryAppsToPreinstall());
-    EXPECT_TRUE(std::filesystem::exists(markerPath));
 
     std::filesystem::remove_all(rootDir, ec);
-    std::filesystem::remove(markerPath, ec);
 }
 
 // Test copyFactoryAppsToPreinstall copies files to the preinstall directory
@@ -1086,13 +1290,11 @@ TEST_F(SceneSetTest, CopyFactoryAppsToPreinstallCopiesFilesToPreinstallDirectory
     const auto rootDir = MakeUniqueTempPath("sceneset_factory_copy_files");
     const auto sourceDir = rootDir / "factory_apps";
     const auto preinstallDir = rootDir / "preinstall";
-    const auto markerPath = MakeUniqueTempPath("sceneset_factory_marker");
 
     std::error_code ec;
     std::filesystem::create_directories(sourceDir, ec);
     std::filesystem::create_directories(preinstallDir, ec);
     ASSERT_FALSE(ec);
-    std::filesystem::remove(markerPath, ec);
 
     {
         std::ofstream app1(sourceDir / "app1.bolt");
@@ -1103,15 +1305,12 @@ TEST_F(SceneSetTest, CopyFactoryAppsToPreinstallCopiesFilesToPreinstallDirectory
 
     SceneSetAppTestPeer::SetFactoryAppPath(app, sourceDir.string());
     SceneSetAppTestPeer::SetPreinstallDirectory(app, preinstallDir.string());
-    SceneSetAppTestPeer::SetFactoryAppsCopiedMarker(app, markerPath.string());
 
     EXPECT_TRUE(app.copyFactoryAppsToPreinstall());
     EXPECT_TRUE(std::filesystem::exists(preinstallDir / "app1.bolt"));
     EXPECT_TRUE(std::filesystem::exists(preinstallDir / "app2.bolt"));
-    EXPECT_TRUE(std::filesystem::exists(markerPath));
 
     std::filesystem::remove_all(rootDir, ec);
-    std::filesystem::remove(markerPath, ec);
 }
 
 // Test copyFactoryAppsToPreinstall creates the preinstall directory when it does not exist
@@ -1120,13 +1319,11 @@ TEST_F(SceneSetTest, CopyFactoryAppsToPreinstallCreatesPreinstallDirectoryWhenMi
     const auto rootDir = MakeUniqueTempPath("sceneset_factory_copy_create_dst");
     const auto sourceDir = rootDir / "factory_apps";
     const auto preinstallDir = rootDir / "new_preinstall";
-    const auto markerPath = MakeUniqueTempPath("sceneset_factory_marker");
 
     std::error_code ec;
     std::filesystem::create_directories(sourceDir, ec);
     ASSERT_FALSE(ec);
     std::filesystem::remove_all(preinstallDir, ec);
-    std::filesystem::remove(markerPath, ec);
 
     {
         std::ofstream bundle(sourceDir / "bundle.bolt");
@@ -1135,15 +1332,12 @@ TEST_F(SceneSetTest, CopyFactoryAppsToPreinstallCreatesPreinstallDirectoryWhenMi
 
     SceneSetAppTestPeer::SetFactoryAppPath(app, sourceDir.string());
     SceneSetAppTestPeer::SetPreinstallDirectory(app, preinstallDir.string());
-    SceneSetAppTestPeer::SetFactoryAppsCopiedMarker(app, markerPath.string());
 
     EXPECT_TRUE(app.copyFactoryAppsToPreinstall());
     EXPECT_TRUE(std::filesystem::exists(preinstallDir));
     EXPECT_TRUE(std::filesystem::exists(preinstallDir / "bundle.bolt"));
-    EXPECT_TRUE(std::filesystem::exists(markerPath));
 
     std::filesystem::remove_all(rootDir, ec);
-    std::filesystem::remove(markerPath, ec);
 }
 
 // Test copyFactoryAppsToPreinstall overwrites existing files in the preinstall directory
@@ -1152,13 +1346,11 @@ TEST_F(SceneSetTest, CopyFactoryAppsToPreinstallOverwritesExistingFiles) {
     const auto rootDir = MakeUniqueTempPath("sceneset_factory_copy_overwrite");
     const auto sourceDir = rootDir / "factory_apps";
     const auto preinstallDir = rootDir / "preinstall";
-    const auto markerPath = MakeUniqueTempPath("sceneset_factory_marker");
 
     std::error_code ec;
     std::filesystem::create_directories(sourceDir, ec);
     std::filesystem::create_directories(preinstallDir, ec);
     ASSERT_FALSE(ec);
-    std::filesystem::remove(markerPath, ec);
 
     {
         std::ofstream srcFile(sourceDir / "bundle.bolt");
@@ -1171,7 +1363,6 @@ TEST_F(SceneSetTest, CopyFactoryAppsToPreinstallOverwritesExistingFiles) {
 
     SceneSetAppTestPeer::SetFactoryAppPath(app, sourceDir.string());
     SceneSetAppTestPeer::SetPreinstallDirectory(app, preinstallDir.string());
-    SceneSetAppTestPeer::SetFactoryAppsCopiedMarker(app, markerPath.string());
 
     EXPECT_TRUE(app.copyFactoryAppsToPreinstall());
 
@@ -1181,7 +1372,6 @@ TEST_F(SceneSetTest, CopyFactoryAppsToPreinstallOverwritesExistingFiles) {
     EXPECT_EQ(finalContent, "new_content");
 
     std::filesystem::remove_all(rootDir, ec);
-    std::filesystem::remove(markerPath, ec);
 }
 
 // Test copyFactoryAppsToPreinstall skips subdirectories (only copies regular files)
@@ -1190,13 +1380,11 @@ TEST_F(SceneSetTest, CopyFactoryAppsToPreinstallSkipsSubdirectories) {
     const auto rootDir = MakeUniqueTempPath("sceneset_factory_copy_skip_dirs");
     const auto sourceDir = rootDir / "factory_apps";
     const auto preinstallDir = rootDir / "preinstall";
-    const auto markerPath = MakeUniqueTempPath("sceneset_factory_marker");
 
     std::error_code ec;
     std::filesystem::create_directories(sourceDir / "subdir", ec);
     std::filesystem::create_directories(preinstallDir, ec);
     ASSERT_FALSE(ec);
-    std::filesystem::remove(markerPath, ec);
 
     {
         std::ofstream regularFile(sourceDir / "app.bolt");
@@ -1205,14 +1393,12 @@ TEST_F(SceneSetTest, CopyFactoryAppsToPreinstallSkipsSubdirectories) {
 
     SceneSetAppTestPeer::SetFactoryAppPath(app, sourceDir.string());
     SceneSetAppTestPeer::SetPreinstallDirectory(app, preinstallDir.string());
-    SceneSetAppTestPeer::SetFactoryAppsCopiedMarker(app, markerPath.string());
 
     EXPECT_TRUE(app.copyFactoryAppsToPreinstall());
     EXPECT_TRUE(std::filesystem::exists(preinstallDir / "app.bolt"));
     EXPECT_FALSE(std::filesystem::exists(preinstallDir / "subdir"));
 
     std::filesystem::remove_all(rootDir, ec);
-    std::filesystem::remove(markerPath, ec);
 }
 
 // --- completeStartupAfterPreinstall tests ---
@@ -1280,10 +1466,18 @@ TEST_F(SceneSetTest, CompleteStartupAfterPreinstallDoesNothingWhenInactive) {
 TEST_F(SceneSetTest, CompleteStartupAfterPreinstallCleansUpPreinstallFolderOnSuccess) {
     SceneSetApp app;
     const auto preinstallDir = MakeUniqueTempPath("sceneset_complete_success");
+    const auto versionFile = MakeUniqueTempPath("sceneset_complete_success_ver");
+    const auto fwMarker = MakeUniqueTempPath("sceneset_complete_success_fwmarker");
 
     std::error_code ec;
     std::filesystem::create_directories(preinstallDir, ec);
     ASSERT_FALSE(ec);
+    std::filesystem::remove(fwMarker, ec);
+
+    {
+        std::ofstream f(versionFile);
+        f << "imagename:TEST_FW_1.0" << std::endl;
+    }
 
     {
         std::ofstream f1(preinstallDir / "app1.bolt");
@@ -1295,6 +1489,8 @@ TEST_F(SceneSetTest, CompleteStartupAfterPreinstallCleansUpPreinstallFolderOnSuc
     ASSERT_TRUE(std::filesystem::exists(preinstallDir / "app2.bolt"));
 
     SceneSetAppTestPeer::SetPreinstallDirectory(app, preinstallDir.string());
+    SceneSetAppTestPeer::SetFirmwareVersionFile(app, versionFile.string());
+    SceneSetAppTestPeer::SetLastFirmwareVersionMarker(app, fwMarker.string());
     SceneSetAppTestPeer::SetWaitingForStartupPreinstallCompletion(app, true);
     SceneSetAppTestPeer::SetIsActive(app, true);
     SceneSetAppTestPeer::SetStartupPreinstallHasFailure(app, false);
@@ -1306,19 +1502,31 @@ TEST_F(SceneSetTest, CompleteStartupAfterPreinstallCleansUpPreinstallFolderOnSuc
     // Preinstall folder files must have been removed on success
     EXPECT_FALSE(std::filesystem::exists(preinstallDir / "app1.bolt"));
     EXPECT_FALSE(std::filesystem::exists(preinstallDir / "app2.bolt"));
+    // Firmware datasource is recorded only after a successful preinstall
+    EXPECT_TRUE(std::filesystem::exists(fwMarker));
     EXPECT_FALSE(SceneSetAppTestPeer::GetWaitingForStartupPreinstallCompletion(app));
 
     std::filesystem::remove_all(preinstallDir, ec);
+    std::filesystem::remove(versionFile, ec);
+    std::filesystem::remove(fwMarker, ec);
 }
 
 // Test completeStartupAfterPreinstall preserves the preinstall folder on failure
 TEST_F(SceneSetTest, CompleteStartupAfterPreinstallPreservesPreinstallFolderOnFailure) {
     SceneSetApp app;
     const auto preinstallDir = MakeUniqueTempPath("sceneset_complete_failure");
+    const auto versionFile = MakeUniqueTempPath("sceneset_complete_failure_ver");
+    const auto fwMarker = MakeUniqueTempPath("sceneset_complete_failure_fwmarker");
 
     std::error_code ec;
     std::filesystem::create_directories(preinstallDir, ec);
     ASSERT_FALSE(ec);
+    std::filesystem::remove(fwMarker, ec);
+
+    {
+        std::ofstream f(versionFile);
+        f << "imagename:TEST_FW_1.0" << std::endl;
+    }
 
     {
         std::ofstream f1(preinstallDir / "app1.bolt");
@@ -1330,6 +1538,8 @@ TEST_F(SceneSetTest, CompleteStartupAfterPreinstallPreservesPreinstallFolderOnFa
     ASSERT_TRUE(std::filesystem::exists(preinstallDir / "app2.bolt"));
 
     SceneSetAppTestPeer::SetPreinstallDirectory(app, preinstallDir.string());
+    SceneSetAppTestPeer::SetFirmwareVersionFile(app, versionFile.string());
+    SceneSetAppTestPeer::SetLastFirmwareVersionMarker(app, fwMarker.string());
     SceneSetAppTestPeer::SetWaitingForStartupPreinstallCompletion(app, true);
     SceneSetAppTestPeer::SetIsActive(app, true);
     SceneSetAppTestPeer::SetStartupPreinstallHasFailure(app, true);
@@ -1341,19 +1551,25 @@ TEST_F(SceneSetTest, CompleteStartupAfterPreinstallPreservesPreinstallFolderOnFa
     // Preinstall folder must be untouched on failure
     EXPECT_TRUE(std::filesystem::exists(preinstallDir / "app1.bolt"));
     EXPECT_TRUE(std::filesystem::exists(preinstallDir / "app2.bolt"));
+    // Firmware datasource must NOT advance when preinstall failed
+    EXPECT_FALSE(std::filesystem::exists(fwMarker));
     EXPECT_FALSE(SceneSetAppTestPeer::GetWaitingForStartupPreinstallCompletion(app));
 
     std::filesystem::remove_all(preinstallDir, ec);
+    std::filesystem::remove(versionFile, ec);
+    std::filesystem::remove(fwMarker, ec);
 }
 
 // Test completeStartupAfterPreinstall is idempotent — second call is a no-op
 TEST_F(SceneSetTest, CompleteStartupAfterPreinstallIsIdempotentOnSecondCall) {
     SceneSetApp app;
     const auto preinstallDir = MakeUniqueTempPath("sceneset_complete_idempotent");
+    const auto missingVersionFile = MakeUniqueTempPath("sceneset_complete_idempotent_ver_missing");
 
     std::error_code ec;
     std::filesystem::create_directories(preinstallDir, ec);
     ASSERT_FALSE(ec);
+    std::filesystem::remove(missingVersionFile, ec);
 
     {
         std::ofstream f(preinstallDir / "app.bolt");
@@ -1361,6 +1577,7 @@ TEST_F(SceneSetTest, CompleteStartupAfterPreinstallIsIdempotentOnSecondCall) {
     }
 
     SceneSetAppTestPeer::SetPreinstallDirectory(app, preinstallDir.string());
+    SceneSetAppTestPeer::SetFirmwareVersionFile(app, missingVersionFile.string());
     SceneSetAppTestPeer::SetWaitingForStartupPreinstallCompletion(app, true);
     SceneSetAppTestPeer::SetIsActive(app, true);
     SceneSetAppTestPeer::SetStartupPreinstallHasFailure(app, false);

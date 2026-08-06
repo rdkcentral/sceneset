@@ -43,6 +43,7 @@ target_compile_definitions(${TEST_EXECUTABLE} PRIVATE
     UNIT_TEST
     DAC_APP_CERT_PATH="/etc/rdk/certs"
     ENABLE_SYSTEM_CONFIG=1
+    ENABLE_FIRMWARE_CHANGE_DETECTION=1
 )
 
 # WPEFramework library paths

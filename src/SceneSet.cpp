@@ -46,6 +46,14 @@
 #include <telemetry_busmessage_sender.h>
 #endif
 
+#ifndef ENABLE_FIRMWARE_CHANGE_DETECTION
+#define ENABLE_FIRMWARE_CHANGE_DETECTION 0
+#endif
+
+#if ENABLE_FIRMWARE_CHANGE_DETECTION
+#include "WPEFramework/interfaces/ISystemServices.h"
+#endif
+
 #ifndef GIT_SHORT_SHA
 #define GIT_SHORT_SHA "unknown"
 #endif
@@ -74,6 +82,10 @@
 #define RESTART_HOMEAPP_ALWAYS 0
 #endif
 
+#ifndef DISABLE_CRASH_RECOVERY
+#define DISABLE_CRASH_RECOVERY 0
+#endif
+
 #ifndef DISABLE_HOMEAPP_RESTART_ON_NEW_VERSION
 #define DISABLE_HOMEAPP_RESTART_ON_NEW_VERSION 0
 #endif
@@ -81,6 +93,8 @@
 #define SCENESET_CONFIG_FILE "/opt/sceneset_app.conf"
 #define SCENESET_SYSTEM_CONFIG_FILE "/etc/sceneset.conf"
 #define SCENESET_OVERRIDE_CONFIG_FILE "/opt/sceneset.conf"
+#define FIRMWARE_VERSION_FILE "/version.txt"
+#define LAST_FIRMWARE_VERSION_MARKER "/opt/persistent/.sceneset_last_firmware_version"
 #define FACTORY_APPS_COPIED_MARKER "/opt/persistent/.sceneset_factory_apps_copied"
 
 namespace { // begin file-private constants and helpers
@@ -89,6 +103,9 @@ constexpr const char* kPackageManagerDownloadDirKey = "downloadDir";
 constexpr const char* kPreinstallDirectoryKey = "appPreinstallDirectory";
 constexpr const char* kPreinstallLocationSettingKey = "preinstallLocation";
 constexpr const char* kDefaultHomeAppSettingKey = "defaultHomeApp";
+#if ENABLE_FIRMWARE_CHANGE_DETECTION
+constexpr const char* kSystemServicesCallsign = "org.rdk.System";
+#endif
 constexpr const char* kInitialDownloadSweepEnvVar = "SCENESET_INITIAL_DOWNLOAD_SWEEP";
 constexpr const char* kSceneSetSystemConfigEnvVar = "SCENESET_SYSTEM_CONFIG_FILE";
 #if ENABLE_CONFIG_OVERRIDE
@@ -664,6 +681,143 @@ void SceneSetApp::markFactoryAppsCopied() {
     }
 }
 
+#if ENABLE_FIRMWARE_CHANGE_DETECTION
+std::string SceneSetApp::readCurrentFirmwareVersionFromSystem() const {
+    const std::string thunderAccessPath = getThunderAccessPath();
+    auto client = Core::ProxyType<RPC::CommunicatorClient>::Create(
+        Core::NodeId(thunderAccessPath.c_str()));
+    if (!client.IsValid()) {
+        std::cerr << "Failed to create COMRPC client for SystemServices" << std::endl;
+        return "";
+    }
+
+    Exchange::ISystemServices* systemServices = client->Open<Exchange::ISystemServices>(kSystemServicesCallsign);
+    if (systemServices == nullptr) {
+        std::cerr << "Failed to open ISystemServices interface on " << kSystemServicesCallsign << std::endl;
+        return "";
+    }
+
+    Exchange::ISystemServices::DownloadedFirmwareInfo info{};
+    const Core::hresult result = systemServices->GetDownloadedFirmwareInfo(info);
+    systemServices->Release();
+
+    if (result != Core::ERROR_NONE) {
+        std::cerr << "GetDownloadedFirmwareInfo failed with error code: " << result << std::endl;
+        return "";
+    }
+
+    if (!info.success) {
+        std::cerr << "GetDownloadedFirmwareInfo reported failure: " << info.errorMessage << std::endl;
+        return "";
+    }
+
+    return info.currentFWVersion;
+}
+
+std::string SceneSetApp::readCurrentFirmwareVersion() const {
+    // Primary: query the System plugin via COMRPC.
+    const std::string systemVersion = readCurrentFirmwareVersionFromSystem();
+    if (!systemVersion.empty()) {
+        std::cout << "Current firmware version from System plugin: " << systemVersion << std::endl;
+        return systemVersion;
+    }
+
+    // Fallback: read directly from the firmware version file on disk.
+#ifdef UNIT_TEST
+    const std::string firmwareVersionFile = m_firmwareVersionFileOverride.empty()
+        ? std::string(FIRMWARE_VERSION_FILE) : m_firmwareVersionFileOverride;
+#else
+    const std::string firmwareVersionFile = FIRMWARE_VERSION_FILE;
+#endif
+    std::cerr << "System plugin unavailable; falling back to firmware version file: " << firmwareVersionFile << std::endl;
+    std::ifstream file(firmwareVersionFile);
+    if (!file.is_open()) {
+        std::cerr << "Failed to open firmware version file: " << firmwareVersionFile << std::endl;
+        return "";
+    }
+    std::string line;
+    while (std::getline(file, line)) {
+        constexpr const char* prefix = "imagename:";
+        constexpr std::size_t prefixLen = 10; // strlen("imagename:")
+        if (line.rfind(prefix, 0) == 0) {
+            std::string version = line.substr(prefixLen);
+            const auto start = version.find_first_not_of(" \t\r\n");
+            if (start == std::string::npos) return "";
+            const auto end = version.find_last_not_of(" \t\r\n");
+            return version.substr(start, end - start + 1);
+        }
+    }
+    std::cerr << "No 'imagename:' line found in firmware version file: " << firmwareVersionFile << std::endl;
+    return "";
+}
+
+std::string SceneSetApp::readLastBootFirmwareVersion() const {
+#ifdef UNIT_TEST
+    const std::string markerPath = m_lastFirmwareVersionMarkerOverride.empty()
+        ? std::string(LAST_FIRMWARE_VERSION_MARKER) : m_lastFirmwareVersionMarkerOverride;
+#else
+    const std::string markerPath = LAST_FIRMWARE_VERSION_MARKER;
+#endif
+    std::ifstream file(markerPath);
+    if (!file.is_open()) {
+        std::cout << "No last firmware version marker found at: " << markerPath << std::endl;
+        return "";
+    }
+    std::string version;
+    std::getline(file, version);
+    const auto start = version.find_first_not_of(" \t\r\n");
+    if (start == std::string::npos) return "";
+    const auto end = version.find_last_not_of(" \t\r\n");
+    return version.substr(start, end - start + 1);
+}
+
+void SceneSetApp::storeCurrentFirmwareVersion() {
+    const std::string currentVersion = readCurrentFirmwareVersion();
+    if (currentVersion.empty()) {
+        // Don't persist an unknown version; next boot retries the first-boot flow.
+        std::cerr << "Current firmware version unavailable; not updating last-firmware-version marker." << std::endl;
+        return;
+    }
+#ifdef UNIT_TEST
+    const std::string markerPath = m_lastFirmwareVersionMarkerOverride.empty()
+        ? std::string(LAST_FIRMWARE_VERSION_MARKER) : m_lastFirmwareVersionMarkerOverride;
+#else
+    const std::string markerPath = LAST_FIRMWARE_VERSION_MARKER;
+#endif
+    std::ofstream file(markerPath);
+    if (file.is_open()) {
+        file << currentVersion << std::endl;
+        file.close();
+        std::cout << "Stored current firmware version '" << currentVersion << "' at: " << markerPath << std::endl;
+    } else {
+        std::cerr << "Failed to store current firmware version at: " << markerPath << std::endl;
+    }
+}
+
+bool SceneSetApp::isFirmwareChanged() const {
+    const std::string currentVersion = readCurrentFirmwareVersion();
+    const std::string lastVersion = readLastBootFirmwareVersion();
+
+    if (currentVersion.empty()) {
+        std::cout << "Could not determine current firmware version. Treating as firmware changed." << std::endl;
+        return true;
+    }
+
+    if (lastVersion.empty()) {
+        std::cout << "No previous firmware version stored. Treating as firmware changed (first boot)." << std::endl;
+        return true;
+    }
+
+    if (currentVersion != lastVersion) {
+        std::cout << "Firmware changed from '" << lastVersion << "' to '" << currentVersion << "'. Treating as first boot." << std::endl;
+        return true;
+    }
+
+    std::cout << "Firmware version unchanged: '" << currentVersion << "'. Normal boot." << std::endl;
+    return false;
+}
+#endif // ENABLE_FIRMWARE_CHANGE_DETECTION
+
 bool SceneSetApp::copyFactoryAppsToPreinstall() {
     namespace fs = std::filesystem;
 
@@ -729,13 +883,14 @@ bool SceneSetApp::copyFactoryAppsToPreinstall() {
 
     if (fileCount > 0) {
         std::cout << "Successfully copied " << fileCount << " factory app bundles to preinstall folder" << std::endl;
-        markFactoryAppsCopied();
-        return true;
     } else {
         std::cout << "No factory app bundles found to copy" << std::endl;
-        markFactoryAppsCopied();
-        return true;
     }
+#if !ENABLE_FIRMWARE_CHANGE_DETECTION
+    // Firmware path records the version only after a successful preinstall (completeStartupAfterPreinstall).
+    markFactoryAppsCopied();
+#endif
+    return true;
 }
 
 void SceneSetApp::cleanupPreinstallFolder() {
@@ -799,6 +954,10 @@ void SceneSetApp::completeStartupAfterPreinstall() {
     std::cout << "Preinstall phase finished. Continuing startup flow." << std::endl;
     if (isStartupPreinstallSucceed()) {
         cleanupPreinstallFolder();
+#if ENABLE_FIRMWARE_CHANGE_DETECTION
+        // Record the firmware as the new datasource only after preinstall succeeds.
+        storeCurrentFirmwareVersion();
+#endif
     } else {
         std::cerr << "Startup preinstall reported a failure state before completion. Preserving files in preinstall folder for retry." << std::endl;
     }
@@ -989,8 +1148,15 @@ void SceneSetApp::run() {
         std::cerr << "Failed to register for AppManager events" << std::endl;
     }
 
-    // Determine if this is a Factory Setting Reset (FSR) / first boot scenario
+    // Determine if this is a Factory Setting Reset (FSR) / first boot scenario.
+#if ENABLE_FIRMWARE_CHANGE_DETECTION
+    // A first boot is triggered whenever the current firmware version differs from
+    // the firmware version recorded during the previous boot.
+    bool isFactoryReset = isFirmwareChanged();
+#else
+    // A first boot is detected via the persistent factory-apps-copied marker file.
     bool isFactoryReset = !isFactoryAppsCopied();
+#endif
 
     // Copy factory apps to preinstall folder on first boot only
     if (isFactoryReset) {
@@ -999,7 +1165,7 @@ void SceneSetApp::run() {
             std::cerr << "Failed to copy factory apps. Continuing with preinstall anyway." << std::endl;
         }
     } else {
-        std::cout << "Factory apps already copied on first boot. Skipping copy." << std::endl;
+        std::cout << "Not a first boot. Skipping factory app copy." << std::endl;
     }
 
     // Start preinstall asynchronously.
@@ -1010,6 +1176,8 @@ void SceneSetApp::run() {
     std::cout << "Starting preinstall process and waiting for OnPreinstallationComplete" << std::endl;
     if (!startPreinstall(isFactoryReset)) {
         std::cerr << "Failed to start preinstall process. Continuing startup flow without deleting preinstall files." << std::endl;
+        // Preinstall never ran: mark it failed so the folder is preserved and the firmware datasource is not advanced.
+        m_startupPreinstallState.hasFailure = true;
         completeStartupAfterPreinstall();
     } else {
         if (!preinstallEventsRegistered) {
@@ -1102,12 +1270,15 @@ void SceneSetApp::AppManagerEventHandler::OnAppLifecycleStateChanged(const strin
                 std::cout << "App " << appId << " terminated. Restarting reference app due to RESTART_HOMEAPP_ALWAYS." << std::endl;
                 std::cout << "Termination error reason: " << static_cast<int>(errorReason) << std::endl;
                 shouldRestart = true;
-#else
+#elif !DISABLE_CRASH_RECOVERY
                 // Default behavior: restart only for ABORT terminations.
+                // Disable with -DDISABLE_CRASH_RECOVERY=ON when HomeAppManager owns crash recovery.
                 if (errorReason == Exchange::IAppManager::AppErrorReason::APP_ERROR_ABORT) {
                     std::cout << "App " << appId << " terminated with ABORT error. Restarting reference app." << std::endl;
                     shouldRestart = true;
                 }
+#else
+                std::cout << "App " << appId << " terminated. Crash recovery disabled (DISABLE_CRASH_RECOVERY=ON)." << std::endl;
 #endif
             }
 
