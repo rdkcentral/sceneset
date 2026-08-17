@@ -94,6 +94,8 @@ public:
     static void SetDownloadDirectory(SceneSetApp& app, const std::string& dir);
     static void SetAppLaunched(SceneSetApp& app, bool value);
     static void SetIsActive(SceneSetApp& app, bool value);
+    static void SetFirmwareVersionFile(SceneSetApp& app, const std::string& path);
+    static void SetLastFirmwareVersionMarker(SceneSetApp& app, const std::string& path);
     static void SetFactoryAppsCopiedMarker(SceneSetApp& app, const std::string& path);
     static void SetFactoryAppPath(SceneSetApp& app, const std::string& path);
     

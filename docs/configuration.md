@@ -47,6 +47,8 @@ flowchart LR
 | `ENABLE_SYSTEM_CONFIG` | Bool | `OFF` | Enable reading `/etc/sceneset.conf` |
 | `ENABLE_CONFIG_OVERRIDE` | Bool | `OFF` | Enable `/opt/sceneset.conf` override layer |
 | `RESTART_HOMEAPP_ALWAYS` | Bool | `OFF` | Restart app on any TERMINATING→UNLOADED transition |
+| `ENABLE_FIRMWARE_CHANGE_DETECTION` | Bool | `OFF` | Detect first boot by firmware version change (via `org.rdk.System`). When `OFF`, uses the `.sceneset_factory_apps_copied` marker file |
+| `DISABLE_HOMEAPP_RESTART_ON_NEW_VERSION` | Bool | `OFF` | Disable auto kill/relaunch when a newer reference app version is installed while running |
 | `SCENESET_TELEMETRY_METRICS_SUPPORT` | Bool | `OFF` | Enable SceneSet T2 launch/relaunch telemetry marker emission |
 | `DISABLE_REFERENCE_APP_UPDATE` | Bool | `OFF` | Disable OTA update monitoring |
 
@@ -257,7 +259,8 @@ flowchart TD
 | `/opt/sceneset_app.conf` | Runtime app ID override | None |
 | `/etc/sceneset.conf` | System-level configuration | `ENABLE_SYSTEM_CONFIG=ON` |
 | `/opt/sceneset.conf` | Override layer | `ENABLE_CONFIG_OVERRIDE=ON` |
-| `/opt/persistent/.sceneset_factory_apps_copied` | First-boot marker (internal) | None |
+| `/opt/persistent/.sceneset_last_firmware_version` | Records firmware version from last boot; used to detect firmware changes at startup when `ENABLE_FIRMWARE_CHANGE_DETECTION=ON` (internal) | None |
+| `/opt/persistent/.sceneset_factory_apps_copied` | First-boot marker used when `ENABLE_FIRMWARE_CHANGE_DETECTION=OFF` (internal) | None |
 
 ---
 
@@ -271,7 +274,7 @@ Description=Application launcher service
 Requires=wpeframework-appmanager.service
 After=wpeframework-appmanager.service
 
-ConditionPathExists=/opt/ai2managers
+ConditionPathExists=/etc/rdkappmanagers
 
 [Service]
 Type=notify
@@ -290,7 +293,7 @@ WantedBy=multi-user.target
 | `Type` | `notify` | Service uses `sd_notify()` to signal readiness |
 | `Requires` | `wpeframework-appmanager.service` | Ensures AppManager is running |
 | `After` | `wpeframework-appmanager.service` | Start order dependency |
-| `ConditionPathExists` | `/opt/ai2managers` | Service only starts if path exists |
+| `ConditionPathExists` | `/etc/rdkappmanagers` | Service only starts if path exists |
 | `RemainAfterExit` | `Yes` | Service remains active after main process exits |
 
 ### Service Management
@@ -364,8 +367,11 @@ cat /opt/sceneset_app.conf
 cat /etc/sceneset.conf 2>/dev/null
 cat /opt/sceneset.conf 2>/dev/null
 
-# Check marker file
-ls -la /opt/persistent/.sceneset_factory_apps_copied
+# Check last boot firmware version marker
+cat /opt/persistent/.sceneset_last_firmware_version
+
+# Check current firmware version
+cat /version.txt
 ```
 
 ---

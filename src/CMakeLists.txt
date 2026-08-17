@@ -94,7 +94,14 @@ endif()
 set(ENABLE_SYSTEM_CONFIG OFF CACHE BOOL "Enable reading system config from /etc/sceneset.conf")
 set(ENABLE_CONFIG_OVERRIDE OFF CACHE BOOL "Enable optional /opt/sceneset.conf override on top of /etc/sceneset.conf")
 set(RESTART_HOMEAPP_ALWAYS OFF CACHE BOOL "Restart reference app on every TERMINATING to UNLOADED transition")
+set(DISABLE_CRASH_RECOVERY OFF CACHE BOOL "Disable crash-triggered restart of the reference app. Use when an external component (e.g. HomeAppManager) owns crash recovery.")
+set(ENABLE_FIRMWARE_CHANGE_DETECTION OFF CACHE BOOL "Detect first boot by comparing current vs previous firmware version (via org.rdk.System). When OFF, first boot is detected using the legacy .sceneset_factory_apps_copied marker file.")
+set(DISABLE_HOMEAPP_RESTART_ON_NEW_VERSION OFF CACHE BOOL "Disable restarting the running reference app when a new version is installed")
 set(SCENESET_TELEMETRY_METRICS_SUPPORT OFF CACHE BOOL "Enable SceneSet telemetry marker publication via T2")
+
+if(DISABLE_HOMEAPP_RESTART_ON_NEW_VERSION)
+    message(WARNING "Auto kill/relaunch on reference app new-version detection is disabled")
+endif()
 
 include(GNUInstallDirs)
 target_include_directories(${TARGET} PRIVATE ${COMMON_INCLUDE_DIRS})
@@ -136,6 +143,9 @@ target_compile_definitions(${TARGET} PRIVATE
     ENABLE_SYSTEM_CONFIG=$<BOOL:${ENABLE_SYSTEM_CONFIG}>
     ENABLE_CONFIG_OVERRIDE=$<BOOL:${ENABLE_CONFIG_OVERRIDE}>
     RESTART_HOMEAPP_ALWAYS=$<BOOL:${RESTART_HOMEAPP_ALWAYS}>
+    DISABLE_CRASH_RECOVERY=$<BOOL:${DISABLE_CRASH_RECOVERY}>
+    ENABLE_FIRMWARE_CHANGE_DETECTION=$<BOOL:${ENABLE_FIRMWARE_CHANGE_DETECTION}>
+    DISABLE_HOMEAPP_RESTART_ON_NEW_VERSION=$<BOOL:${DISABLE_HOMEAPP_RESTART_ON_NEW_VERSION}>
     SCENESET_TELEMETRY_METRICS_SUPPORT=$<BOOL:${SCENESET_TELEMETRY_METRICS_SUPPORT}>
     DISABLE_REFERENCE_APP_UPDATE=$<BOOL:${DISABLE_REFERENCE_APP_UPDATE}>
     GIT_SHORT_SHA="${GIT_SHORT_SHA}"
