@@ -2,8 +2,7 @@
 Description=Application launcher service
 Requires=wpeframework-appmanager.service
 After=wpeframework-appmanager.service
-Wants=sky-asnetwork.service sky-asplayer.service sky-assystem.service sky-asvoicesearch.service sky-asbtremotes.service
-After=sky-asnetwork.service sky-asplayer.service sky-assystem.service sky-asvoicesearch.service sky-asbtremotes.service
+After=wpeframework-asnetwork.service wpeframework-asplayer.service wpeframework-assystem.service wpeframework-asvoice.service
 
 ConditionPathExists=/tmp/ai2managers
 
