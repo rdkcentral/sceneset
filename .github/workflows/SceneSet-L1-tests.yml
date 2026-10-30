@@ -202,7 +202,8 @@ jobs:
           # Copy the IAppManager.h from entservices-apis
           cp entservices-apis/apis/AppManager/IAppManager.h $GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/
           cp entservices-apis/apis/PreinstallManager/IPreinstallManager.h $GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/
-          cp entservices-apis/apis/PackageManager/IAppPackageManager.h $GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/
+          cp entservices-apis/apis/AppPackageManager/IAppPackageManager.h $GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/
+          cp entservices-apis/apis/SystemServices/ISystemServices.h $GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/
           
           # Create a basic Ids.h file
           cat > $GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/Ids.h << 'EOF'
