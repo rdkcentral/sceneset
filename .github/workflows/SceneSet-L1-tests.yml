@@ -205,51 +205,19 @@ jobs:
           cp entservices-apis/apis/AppPackageManager/IAppPackageManager.h $GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/
           cp entservices-apis/apis/SystemServices/ISystemServices.h $GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/
           
-          # Create a basic Ids.h file
-          cat > $GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/Ids.h << 'EOF'
+          # Install the canonical ID definitions from entservices-apis and ensure each
+          # interface header resolves the IDs it references when built in isolation.
+          cp entservices-apis/apis/Ids.h $GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/Ids.h
 
-          #pragma once
-
-          #include <WPEFramework/core/core.h>
-
-          namespace WPEFramework {
-          namespace Exchange {
-
-          // Interface IDs for AppManager
-          enum InterfaceIds : uint32_t {
-              ID_APPMANAGER                      = 0x00000200,
-              ID_APPMANAGER_NOTIFICATION         = 0x00000201,
-              ID_LOADED_APP_INFO_ITERATOR        = 0x00000202,
-
-              // Interface IDs for PreinstallManager
-              ID_PREINSTALL_MANAGER              = 0x00000210,
-              ID_PREINSTALL_MANAGER_NOTIFICATION = 0x00000211,
-
-              // Interface IDs for AppPackageManager (IPackageDownloader)
-              ID_PACKAGE_DOWNLOADER              = 0x00000220,
-              ID_PACKAGE_INFO_ITERATOR           = 0x00000221,
-              ID_PACKAGE_DOWNLOADER_NOTIFICATION = 0x00000222,
-
-              // Interface IDs for AppPackageManager (IPackageInstaller)
-              ID_PACKAGE_INSTALLER               = 0x00000230,
-              ID_PACKAGE_ITERATOR                = 0x00000231,
-              ID_PACKAGE_INSTALLER_NOTIFICATION  = 0x00000232,
-              ID_PACKAGE_KEY_VALUE_ITERATOR      = 0x00000233,
-
-              // Interface IDs for AppPackageManager (IPackageHandler)
-              ID_PACKAGE_HANDLER                 = 0x00000240,
-              ID_PACKAGE_LOCK_ITERATOR           = 0x00000241
-          };
-
-          } // namespace Exchange
-          } // namespace WPEFramework
-          EOF
-
-          # Patch the IAppManager.h to fix enum issues and include Ids.h
-          sed -i '1i#include "Ids.h"' $GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/IAppManager.h
-
-          # Fix the missing enum value in IAppManager.h
-          sed -i 's/APP_ERROR_REASON_UNKNOWN/APP_ERROR_REASON_NONE = 0, APP_ERROR_REASON_UNKNOWN/g' $GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/IAppManager.h
+          for header in \
+            "$GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/IAppManager.h" \
+            "$GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/IPreinstallManager.h" \
+            "$GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/IAppPackageManager.h" \
+            "$GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/ISystemServices.h"; do
+            if [ -f "$header" ] && ! grep -q '#include "Ids.h"' "$header"; then
+              sed -i '1i#include "Ids.h"' "$header"
+            fi
+          done
       
       - name: Build SceneSet L1 Tests
         run: >
@@ -275,7 +243,6 @@ jobs:
           rm -rf $(pwd)/scenesetL1TestResults.json
 
       - name: Run SceneSet unit tests with valgrind
-        if: ${{ !env.ACT }}
         run: >
           PATH=$GITHUB_WORKSPACE/install/usr/bin:${PATH}
           LD_LIBRARY_PATH=$GITHUB_WORKSPACE/install/usr/lib:$GITHUB_WORKSPACE/install/usr/lib/wpeframework/plugins:${LD_LIBRARY_PATH}
@@ -292,7 +259,6 @@ jobs:
           rm -rf $(pwd)/scenesetL1TestResults.json
       
       - name: Generate Code Coverage
-        if: matrix.coverage == 'with-coverage'
         run: |
           lcov --capture --directory . --output-file coverage.info 
           lcov --remove coverage.info '/usr/*' '*/build/*' '*/install/*' '*/Tests/*' --output-file filtered_coverage.info
@@ -300,7 +266,6 @@ jobs:
           genhtml filtered_coverage.info --output-directory coverage
 
       - name: Upload artifacts
-        if: ${{ !env.ACT }}
         uses: actions/upload-artifact@v4
         with:
           name: artifacts-L1-sceneset
