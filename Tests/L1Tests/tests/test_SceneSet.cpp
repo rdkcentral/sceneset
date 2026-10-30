@@ -134,15 +134,15 @@ public:
     }
 
     static void SetWaitingForStartupPreinstallCompletion(SceneSetApp& app, bool value) {
-        app.m_waitingForStartupPreinstallCompletion.store(value);
+        app.m_startupPreinstallState.waitingForCompletion.store(value);
     }
 
     static bool GetWaitingForStartupPreinstallCompletion(const SceneSetApp& app) {
-        return app.m_waitingForStartupPreinstallCompletion.load();
+        return app.m_startupPreinstallState.waitingForCompletion.load();
     }
 
     static void SetStartupPreinstallHasFailure(SceneSetApp& app, bool value) {
-        app.m_startupPreinstallHasFailure.store(value);
+        app.m_startupPreinstallState.hasFailure.store(value);
     }
 
     static void SetIsActive(SceneSetApp& app, bool value) {
@@ -154,7 +154,7 @@ public:
     }
 
     static bool GetStartupPreinstallHasFailure(const SceneSetApp& app) {
-        return app.m_startupPreinstallHasFailure.load();
+        return app.m_startupPreinstallState.hasFailure.load();
     }
 
     static void CallResetStartupPreinstallStatusTracking(SceneSetApp& app) {
@@ -366,7 +366,7 @@ public:
     MOCK_METHOD(Core::hresult, IsInstalled, (const string&, bool&), (override));
     MOCK_METHOD(Core::hresult, GetLoadedApps, (ILoadedAppInfoIterator*&), (override));
     MOCK_METHOD(Core::hresult, LaunchApp, (const string&, const string&, const string&), (override));
-    MOCK_METHOD(Core::hresult, PreloadApp, (const string&, const string&, string&), (override));
+    MOCK_METHOD(Core::hresult, PreloadApp, (const string&, const string&, const string&, string&), (override));
     MOCK_METHOD(Core::hresult, CloseApp, (const string&), (override));
     MOCK_METHOD(Core::hresult, TerminateApp, (const string&), (override));
     MOCK_METHOD(Core::hresult, StartSystemApp, (const string&), (override));
