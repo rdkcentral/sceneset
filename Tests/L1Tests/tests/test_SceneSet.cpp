@@ -2828,7 +2828,8 @@ TEST_F(MockInterfaceTest, LaunchDefaultAppReturnsTrueWhenLaunchAppSucceeds) {
         GTEST_SKIP() << "Reference app ID is empty; skipping.";
     }
 
-    EXPECT_CALL(mockAppMgr, LaunchApp(refId, testing::_, testing::_))
+    EXPECT_CALL(mockAppMgr, LaunchApp(refId,
+        R"({"action":"launch","context":{"source":"device"}})", ""))
         .WillOnce(testing::Return(Core::ERROR_NONE));
     SceneSetAppTestPeer::SetAppManager(app, &mockAppMgr);
 
@@ -2842,7 +2843,8 @@ TEST_F(MockInterfaceTest, LaunchDefaultAppReturnsFalseWhenLaunchAppFails) {
         GTEST_SKIP() << "Reference app ID is empty; skipping.";
     }
 
-    EXPECT_CALL(mockAppMgr, LaunchApp(refId, testing::_, testing::_))
+    EXPECT_CALL(mockAppMgr, LaunchApp(refId,
+        R"({"action":"launch","context":{"source":"device"}})", ""))
         .WillOnce(testing::Return(static_cast<Core::hresult>(Core::ERROR_GENERAL)));
     SceneSetAppTestPeer::SetAppManager(app, &mockAppMgr);
 

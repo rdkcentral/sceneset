@@ -579,7 +579,8 @@ bool SceneSetApp::launchDefaultApp() {
         return false;
     }
     std::cout << "Launching default app: " << m_referenceAppId << std::endl;
-    Core::hresult result = m_appManager->LaunchApp(m_referenceAppId, "", "");
+    const std::string defaultLaunchIntent = R"({"action":"launch","context":{"source":"device"}})";
+    Core::hresult result = m_appManager->LaunchApp(m_referenceAppId, defaultLaunchIntent, "");
     if (result != Core::ERROR_NONE) {
         std::cerr << "LaunchApp failed with error code: " << result << std::endl;
         m_telemetryMetricsState.pendingActiveTelemetry = false;
