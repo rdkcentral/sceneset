@@ -104,7 +104,13 @@ if(DISABLE_HOMEAPP_RESTART_ON_NEW_VERSION)
 endif()
 
 include(GNUInstallDirs)
-target_include_directories(${TARGET} PRIVATE ${COMMON_INCLUDE_DIRS})
+target_include_directories(${TARGET} PRIVATE ${COMMON_INCLUDE_DIRS} ${libralf_INCLUDE_DIR})
+target_link_directories(${TARGET} PRIVATE
+    ${WPEFRAMEWORKCORE_LIBRARY_DIRS}
+    ${WPEFRAMEWORKPLUGINS_LIBRARY_DIRS}
+    ${WPEFRAMEWORKWEBSOCKET_LIBRARY_DIRS}
+    ${WPEFRAMEWORKDEFINITIONS_LIBRARY_DIRS}
+)
 target_link_libraries(${TARGET} PRIVATE ${COMMON_LIBRARIES} systemd)
 
 if(TARGET ralf-utils::libralf)
