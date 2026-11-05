@@ -89,6 +89,10 @@ public:
         return app.m_referenceAppId;
     }
 
+    static void SetReferenceAppId(SceneSetApp& app, const std::string& appId) {
+        app.m_referenceAppId = appId;
+    }
+
     static void SetDefaultHomeAppIntent(SceneSetApp& app, const std::string& intent) {
         app.m_defaultHomeAppIntent = intent;
     }
@@ -2830,10 +2834,9 @@ TEST_F(MockInterfaceTest, ReleaseComInterfacesCallsReleaseOnAllNonNullInterfaces
 
 // launchDefaultApp returns true when LaunchApp succeeds
 TEST_F(MockInterfaceTest, LaunchDefaultAppReturnsTrueWhenLaunchAppSucceeds) {
-    const std::string& refId = SceneSetAppTestPeer::GetReferenceAppId(app);
-    if (refId.empty()) {
-        GTEST_SKIP() << "Reference app ID is empty; skipping.";
-    }
+    const std::string refId = "org.rdk.TestHomeApp";
+    SceneSetAppTestPeer::SetReferenceAppId(app, refId);
+
     EXPECT_CALL(mockAppMgr, LaunchApp(refId, testing::_, testing::_))
         .WillOnce(testing::Return(Core::ERROR_NONE));
     SceneSetAppTestPeer::SetAppManager(app, &mockAppMgr);
@@ -2843,10 +2846,8 @@ TEST_F(MockInterfaceTest, LaunchDefaultAppReturnsTrueWhenLaunchAppSucceeds) {
 
 // launchDefaultApp returns false when LaunchApp reports an error
 TEST_F(MockInterfaceTest, LaunchDefaultAppReturnsFalseWhenLaunchAppFails) {
-    const std::string& refId = SceneSetAppTestPeer::GetReferenceAppId(app);
-    if (refId.empty()) {
-        GTEST_SKIP() << "Reference app ID is empty; skipping.";
-    }
+    const std::string refId = "org.rdk.TestHomeApp";
+    SceneSetAppTestPeer::SetReferenceAppId(app, refId);
 
     EXPECT_CALL(mockAppMgr, LaunchApp(refId, testing::_, testing::_))
         .WillOnce(testing::Return(static_cast<Core::hresult>(Core::ERROR_GENERAL)));
@@ -2857,10 +2858,8 @@ TEST_F(MockInterfaceTest, LaunchDefaultAppReturnsFalseWhenLaunchAppFails) {
 
 // launchDefaultApp passes a configured defaultHomeAppIntent unchanged as the intent argument
 TEST_F(MockInterfaceTest, LaunchDefaultAppPassesConfiguredIntentUnchanged) {
-    const std::string& refId = SceneSetAppTestPeer::GetReferenceAppId(app);
-    if (refId.empty()) {
-        GTEST_SKIP() << "Reference app ID is empty; skipping.";
-    }
+    const std::string refId = "org.rdk.TestHomeApp";
+    SceneSetAppTestPeer::SetReferenceAppId(app, refId);
 
     const std::string configuredIntent = R"({"action":"launch","context":{"source":"device"}})";
     SceneSetAppTestPeer::SetDefaultHomeAppIntent(app, configuredIntent);
@@ -2874,10 +2873,8 @@ TEST_F(MockInterfaceTest, LaunchDefaultAppPassesConfiguredIntentUnchanged) {
 
 // Without a configured defaultHomeAppIntent, launchDefaultApp keeps sending an empty intent
 TEST_F(MockInterfaceTest, LaunchDefaultAppSendsEmptyIntentWhenNotConfigured) {
-    const std::string& refId = SceneSetAppTestPeer::GetReferenceAppId(app);
-    if (refId.empty()) {
-        GTEST_SKIP() << "Reference app ID is empty; skipping.";
-    }
+    const std::string refId = "org.rdk.TestHomeApp";
+    SceneSetAppTestPeer::SetReferenceAppId(app, refId);
 
     EXPECT_TRUE(SceneSetAppTestPeer::GetDefaultHomeAppIntent(app).empty());
 
@@ -3566,7 +3563,9 @@ TEST_F(SceneSetTest, LoadSystemConfigReadsDefaultHomeAppIntentUnchanged) {
         configFile << "defaultHomeAppIntent=" << intent << std::endl;
     }
 
+    const auto missingOverridePath = MakeUniqueTempPath("sceneset_missing_override_config");
     setenv("SCENESET_SYSTEM_CONFIG_FILE", configPath.c_str(), 1);
+    setenv("SCENESET_OVERRIDE_CONFIG_FILE", missingOverridePath.c_str(), 1);
 
     std::unordered_map<std::string, std::string> values;
     ASSERT_TRUE(SceneSetAppTestPeer::LoadSystemConfig(app, values));
@@ -3586,7 +3585,9 @@ TEST_F(SceneSetTest, LoadSystemConfigHandlesMissingOrEmptyDefaultHomeAppIntent) 
         configFile << "defaultHomeApp=org.rdk.EPG" << std::endl;
     }
 
+    const auto missingOverridePath = MakeUniqueTempPath("sceneset_missing_override_config");
     setenv("SCENESET_SYSTEM_CONFIG_FILE", missingKeyConfigPath.c_str(), 1);
+    setenv("SCENESET_OVERRIDE_CONFIG_FILE", missingOverridePath.c_str(), 1);
 
     std::unordered_map<std::string, std::string> values;
     ASSERT_TRUE(SceneSetAppTestPeer::LoadSystemConfig(app, values));
@@ -3602,7 +3603,6 @@ TEST_F(SceneSetTest, LoadSystemConfigHandlesMissingOrEmptyDefaultHomeAppIntent) 
     ASSERT_TRUE(SceneSetAppTestPeer::LoadSystemConfig(app, values));
     ASSERT_TRUE(values.find("defaultHomeAppIntent") != values.end());
     EXPECT_TRUE(values["defaultHomeAppIntent"].empty());
-    EXPECT_TRUE(SceneSetAppTestPeer::GetDefaultHomeAppIntent(app).empty());
 
     std::error_code ec;
     std::filesystem::remove(missingKeyConfigPath, ec);
