@@ -403,15 +403,15 @@ public:
     MOCK_METHOD(Core::hresult, Register, (Exchange::IPackageInstaller::INotification*), (override));
     MOCK_METHOD(Core::hresult, Unregister, (Exchange::IPackageInstaller::INotification*), (override));
     MOCK_METHOD(Core::hresult, Install,
-        (const string&, const string&,
+        (const string&,
          Exchange::IPackageInstaller::IKeyValueIterator* const&,
          const string&, Exchange::IPackageInstaller::FailReason&),
         (override));
     MOCK_METHOD(Core::hresult, Uninstall, (const string&, string&), (override));
     MOCK_METHOD(Core::hresult, ListPackages, (Exchange::IPackageInstaller::IPackageIterator*&), (override));
-    MOCK_METHOD(Core::hresult, Config, (const string&, const string&, Exchange::RuntimeConfig&), (override));
+    MOCK_METHOD(Core::hresult, Config, (const string&, Exchange::RuntimeConfig&), (override));
     MOCK_METHOD(Core::hresult, PackageState,
-        (const string&, const string&, Exchange::IPackageInstaller::InstallState&), (override));
+        (const string&, Exchange::IPackageInstaller::InstallState&), (override));
     MOCK_METHOD(Core::hresult, GetConfigForPackage, (const string&, string&, string&, Exchange::RuntimeConfig&), (override));
 };
 
