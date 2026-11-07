@@ -15,7 +15,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.19)
 
-set(PROJECT_NAME "thunderclient")
+project(sceneset
+    VERSION 1.0.0
+    DESCRIPTION "SceneSet - RDK Application Launcher Service"
+    LANGUAGES CXX
+)
+
 add_subdirectory(src)
