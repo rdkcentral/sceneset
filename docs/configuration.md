@@ -153,12 +153,14 @@ static std::string getDefaultAppName() {
 |-----|---------|---------|
 | `preinstallLocation` | Override preinstall directory | `/media/apps/preinstall` |
 | `defaultHomeApp` | Override reference app ID | `com.rdkcentral.refui` |
+| `defaultHomeAppIntent` | Intent passed to `LaunchApp` when launching the reference app (empty if unset) | `{"action":"launch","context":{"source":"device"}}` |
 
 **Example:**
 ```ini
 # SceneSet system configuration
 preinstallLocation=/media/apps/preinstall
 defaultHomeApp=com.rdkcentral.refui
+defaultHomeAppIntent={"action":"launch","context":{"source":"device"}}
 ```
 
 **Parsing Rules:**

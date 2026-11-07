@@ -103,6 +103,7 @@ constexpr const char* kPackageManagerDownloadDirKey = "downloadDir";
 constexpr const char* kPreinstallDirectoryKey = "appPreinstallDirectory";
 constexpr const char* kPreinstallLocationSettingKey = "preinstallLocation";
 constexpr const char* kDefaultHomeAppSettingKey = "defaultHomeApp";
+constexpr const char* kDefaultHomeAppIntentSettingKey = "defaultHomeAppIntent";
 #if ENABLE_FIRMWARE_CHANGE_DETECTION
 constexpr const char* kSystemServicesCallsign = "org.rdk.System";
 #endif
@@ -447,6 +448,13 @@ bool SceneSetApp::initialize() {
                 std::cerr << "Ignoring empty defaultHomeApp in system config" << std::endl;
             }
         }
+
+        const auto defaultHomeAppIntentIt = systemConfig.find(kDefaultHomeAppIntentSettingKey);
+        if (defaultHomeAppIntentIt != systemConfig.end() && !defaultHomeAppIntentIt->second.empty())
+        {
+            m_defaultHomeAppIntent = defaultHomeAppIntentIt->second;
+            std::cout << "Using defaultHomeAppIntent from system config: " << m_defaultHomeAppIntent << std::endl;
+        }
     }
 
     if (m_preinstallDirectory.empty()) {
@@ -583,7 +591,7 @@ bool SceneSetApp::launchDefaultApp() {
         return false;
     }
     std::cout << "Launching default app: " << m_referenceAppId << std::endl;
-    Core::hresult result = m_appManager->LaunchApp(m_referenceAppId, "", "");
+    Core::hresult result = m_appManager->LaunchApp(m_referenceAppId, m_defaultHomeAppIntent, "");
     if (result != Core::ERROR_NONE) {
         std::cerr << "LaunchApp failed with error code: " << result << std::endl;
         m_telemetryMetricsState.pendingActiveTelemetry = false;

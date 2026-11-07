@@ -125,6 +125,7 @@ private:
     std::shared_ptr<WPEFramework::Exchange::IPackageInstaller::INotification> m_packageInstallerEventHandler;
     std::string m_appmgrCallsign, m_preinstallCallsign;
     std::string m_referenceAppId;
+    std::string m_defaultHomeAppIntent;
     std::string m_comrpcPath;
     std::string m_downloadDirectory;
     std::string m_preinstallDirectory;
