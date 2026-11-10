@@ -202,7 +202,8 @@ jobs:
           # Copy the IAppManager.h from entservices-apis
           cp entservices-apis/apis/AppManager/IAppManager.h $GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/
           cp entservices-apis/apis/PreinstallManager/IPreinstallManager.h $GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/
-          cp entservices-apis/apis/PackageManager/IAppPackageManager.h $GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/
+          cp entservices-apis/apis/AppPackageManager/IAppPackageManager.h $GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/
+          cp entservices-apis/apis/SystemServices/ISystemServices.h $GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/
           
           # Create a basic Ids.h file
           cat > $GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/Ids.h << 'EOF'
@@ -237,7 +238,14 @@ jobs:
 
               // Interface IDs for AppPackageManager (IPackageHandler)
               ID_PACKAGE_HANDLER                 = 0x00000240,
-              ID_PACKAGE_LOCK_ITERATOR           = 0x00000241
+              ID_PACKAGE_LOCK_ITERATOR           = 0x00000241,
+              ID_PACKAGE_CACHE_INITIALIZER        = 0x00000242,
+              ID_APP_PACKAGE_MANAGER_CONFIG       = 0x00000243,
+
+              // Interface IDs for SystemServices
+              ID_SYSTEMSERVICES                  = 0x00000250,
+              ID_SYSTEMSERVICES_NOTIFICATION     = 0x00000251,
+              ID_SYSTEMSERVICES_WAKEUPSOURCES_ITERATOR = 0x00000252
           };
 
           } // namespace Exchange
@@ -272,6 +280,12 @@ jobs:
           SceneSetL1TestsIN &&
           cp -rf $(pwd)/scenesetL1TestResults.json $GITHUB_WORKSPACE/scenesetL1TestResultsWithoutValgrind.json &&
           rm -rf $(pwd)/scenesetL1TestResults.json
+
+      - name: Run SceneSet first-boot marker unit tests
+        run: >
+          PATH=$GITHUB_WORKSPACE/install/usr/bin:${PATH}
+          LD_LIBRARY_PATH=$GITHUB_WORKSPACE/install/usr/lib:$GITHUB_WORKSPACE/install/usr/lib/wpeframework/plugins:${LD_LIBRARY_PATH}
+          SceneSetL1TestsMarkerIN
 
       - name: Run SceneSet unit tests with valgrind
         if: ${{ !env.ACT }}
