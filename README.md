@@ -1,56 +1,103 @@
-# SceneSet
+# SceneSet Documentation
 
-SceneSet is an application launcher service for RDK based Set-Top Boxes that automatically launches the rdk refernce application during system boot up. It provides a reliable mechanism to start reference application using the WPEFramework AppManager interface.
+This documentation provides comprehensive technical details about the SceneSet application launcher service for RDK-based Set-Top Boxes.
 
 ## Overview
 
-SceneSet is designed to run as a systemd service that:
-- Initializes communication with the Thunder/WPEFramework
-- Registers for reference application lifecycle events via AppManager
-- Automatically launches a specified reference application
-- Monitors reference application state changes and restarts the app if it crashes
-- Handles graceful shutdown via signal handling
+SceneSet is a systemd-managed service that automatically launches the RDK reference application during system boot. It integrates with the WPEFramework (Thunder) ecosystem to manage application lifecycle, preinstallation of app bundles, and over-the-air (OTA) updates.
 
-## Features
+## Documentation Index
 
-- **Automatic App Launch**: Launches the rdk reference application specified via environment variable
-- **Event Monitoring**: Registers for and logs AppManager lifecycle events
-- **Signal Handling**: Graceful shutdown on SIGTERM signals
-- **Thunder Integration**: Uses WPEFramework COMRPC for AppManager communication
+| Document | Description |
+|----------|-------------|
+| [Architecture Overview](./docs/architecture.md) | High-level system design, component interactions, and architectural diagrams |
+| [RALF Package Support](./docs/ralf-package-support.md) | Package verification and metadata extraction using libralf |
+| [Configuration Guide](./docs/configuration.md) | Build-time and runtime configuration options |
+| [Telemetry Guide](./docs/sceneset-telemetry.md) | Home app launch/relaunch telemetry marker contract and payload fields |
+| [Testing Guide](./Tests/testing.md) | Test infrastructure, coverage, and testing strategies |
 
-## Configuration
+## Quick Links
 
-### Environment Variables
+- **Source Code**: [`src/`](./src/)
+- **Tests**: [`Tests/L1Tests/`](./Tests/L1Tests/)
+- **Systemd Service**: [`systemd/sceneset.service`](./systemd/sceneset.service)
+- **Build Configuration**: [`CMakeLists.txt`](./CMakeLists.txt)
 
-- **`SCENESET_DEFAULT_APPNAME`**: Specifies the application to launch at startup
+## Key Features
 
-- **`THUNDER_ACCESS`**: Optional path to Thunder communicator socket
-  - Default: `/tmp/communicator`
+```mermaid
+mindmap
+  root((SceneSet))
+    App Lifecycle
+      Auto Launch
+      Crash Recovery
+      State Monitoring
+    Preinstall Management
+      Factory Reset Support
+      Bundle Copying
+      Completion Tracking
+    OTA Updates
+      Download Monitoring
+      Package Verification
+      Version Management
+    System Integration
+      Thunder/COMRPC
+      Systemd Notify
+      Signal Handling
+```
 
-- **`SCENESET_INITIAL_DOWNLOAD_SWEEP`**: Process packages already in the download directory at monitor startup
-  - Default: `0` (disabled). Set to `1`/`true`/`yes`/`on` to enable, `0`/`false`/`no`/`off` to disable
+## System Requirements
 
-## Build Instructions
+- **WPEFramework** (Thunder) with the following plugins:
+  - `org.rdk.AppManager`
+  - `org.rdk.PreinstallManager`
+  - `org.rdk.AppPackageManager`
+- **libralf** for RALF package verification
+- **libsystemd** for systemd integration
+- **C++17** compatible compiler
 
-The project uses CMake for building
+## Architecture at a Glance
 
-### Dependencies
+```mermaid
+graph TB
+    subgraph SceneSet Service
+        SS[SceneSetApp]
+        AH[AppManagerEventHandler]
+        PH[PreinstallManagerEventHandler]
+        PKH[PackageInstallerEventHandler]
+        RS[RalfPackageSupport]
+    end
 
-- **WPEFramework**: Core framework and interfaces
-- **gtest/gmock**: For unit testing
+    subgraph WPEFramework
+        AM[AppManager Plugin]
+        PM[PreinstallManager Plugin]
+        APM[AppPackageManager Plugin]
+    end
 
-## Service Dependencies
+    subgraph External
+        SD[Systemd]
+        FS[Filesystem]
+        RALF[libralf]
+    end
 
-SceneSet depends on the AppManager service:
-- **Requires**: `wpeframework-appmanager.service`
-- **After**: `wpeframework-appmanager.service`
+    SS --> AM
+    SS --> PM
+    SS --> APM
+    AH -.-> SS
+    PH -.-> SS
+    PKH -.-> SS
+    RS --> RALF
+    SS --> SD
+    SS --> FS
+```
 
-Ensure AppManager is running before starting SceneSet.
+## Getting Started
+
+1. **Build the project** - See [Configuration Guide](./configuration.md#build-instructions)
+2. **Configure the service** - Set appropriate CMake variables or runtime config files
+3. **Deploy** - Install the `sceneset` binary and systemd service file
+4. **Enable** - `systemctl enable sceneset.service`
 
 ## License
 
-Licensed under the Apache License, Version 2.0. See the source files for full license text.
-
-## Copyright
-
-Copyright 2024 RDK Management
+Copyright 2024-2026 RDK Management. Licensed under the Apache License, Version 2.0.

@@ -25,8 +25,10 @@
 #include <thread>
 #include <atomic>
 #include <csignal>
+#include <cstdint>
 #include <filesystem>
 #include <mutex>
+#include <unordered_map>
 #include <systemd/sd-daemon.h>
 
 #ifndef MODULE_NAME
@@ -66,7 +68,13 @@ public:
     void checkAndLaunchIfAlreadyInstalled();
     bool isFactoryAppsCopied();
     void markFactoryAppsCopied();
+    bool isFirmwareChanged() const;
+    std::string readCurrentFirmwareVersionFromSystem() const;
+    std::string readCurrentFirmwareVersion() const;
+    std::string readLastBootFirmwareVersion() const;
+    void storeCurrentFirmwareVersion();
     bool copyFactoryAppsToPreinstall();
+    void prepareFactoryAppsForFirstBoot();
     void cleanupPreinstallFolder();
     void waitForTermSignal();
     static void handleTerminationSignal(int signal);
@@ -79,6 +87,34 @@ private:
     friend class SceneSetAppTestPeer;
 #endif
 
+    enum class TerminationNature : int {
+        NONE = 0,
+        CRASH = 1,
+        INTENTIONAL_KILL = 2,
+    };
+
+    struct StartupPreinstallState {
+        std::mutex completionThreadMutex;
+        std::atomic<bool> waitingForCompletion { false };
+        std::atomic<bool> hasFailure { false };
+        std::atomic<bool> markFactoryAppsCopiedOnSuccess { false };
+    };
+
+    struct TelemetryMetricsState {
+        std::atomic<uint64_t> sceneSetStartTsMs { 0 };
+        std::atomic<uint64_t> preinstallStartTsMs { 0 };
+        std::atomic<uint64_t> preinstallEndTsMs { 0 };
+        std::atomic<uint64_t> lastLaunchRequestTsMs { 0 };
+        std::atomic<bool> pendingActiveTelemetry { false };
+        std::atomic<uint32_t> cumulativeRelaunchCount { 0 };
+        std::atomic<int> lastTerminationNature { static_cast<int>(TerminationNature::NONE) };
+    };
+
+#ifdef UNIT_TEST
+    std::string m_lastTelemetryMarker;
+    std::string m_lastTelemetryPayload;
+#endif
+
     std::atomic<bool> m_isActive;
     std::mutex m_lock;
     Exchange::IAppManager *m_appManager;
@@ -88,7 +124,8 @@ private:
     std::shared_ptr<WPEFramework::Exchange::IPreinstallManager::INotification> m_preinstallManagerEventHandler;
     std::shared_ptr<WPEFramework::Exchange::IPackageInstaller::INotification> m_packageInstallerEventHandler;
     std::string m_appmgrCallsign, m_preinstallCallsign;
-    const std::string m_referenceAppId;
+    std::string m_referenceAppId;
+    std::string m_defaultHomeAppIntent;
     std::string m_comrpcPath;
     std::string m_downloadDirectory;
     std::string m_preinstallDirectory;
@@ -102,9 +139,8 @@ private:
     std::atomic<bool> m_stopDownloadMonitorThread;
     std::mutex m_downloadMonitorMutex;
     std::unique_ptr<std::thread> m_preinstallCompletionThread;
-    std::mutex m_preinstallCompletionThreadMutex;
-    std::atomic<bool> m_waitingForStartupPreinstallCompletion;
-    std::atomic<bool> m_startupPreinstallHasFailure;
+    StartupPreinstallState m_startupPreinstallState;
+    TelemetryMetricsState m_telemetryMetricsState;
 
     void stopCurrentLaunchThread();
     void startLaunchThread();
@@ -114,6 +150,7 @@ private:
     void stopPreinstallCompletionThread();
     void completeStartupAfterPreinstall();
     void resetStartupPreinstallStatusTracking();
+    void beginStartupPreinstallStatusTracking(bool statusEventsRegistered);
     void recordStartupPreinstallStatus(const std::string& jsonresponse);
     bool isStartupPreinstallSucceed() const;
     void monitorDownloadDirectory();
@@ -123,11 +160,25 @@ private:
 #ifdef UNIT_TEST
     static void setMetadataExtractorForTesting(bool (*extractor)(const std::filesystem::path&, std::string&, std::string&));
     static void resetMetadataExtractorForTesting();
+    std::string m_factoryAppsCopiedMarkerOverride;
+    std::string m_firmwareVersionFileOverride;
+    std::string m_lastFirmwareVersionMarkerOverride;
+    std::string m_factoryAppPathOverride;
 #endif
     std::string getInstalledReferenceAppVersion() const;
     std::string getThunderAccessPath() const;
     bool fetchPluginConfigValue(const std::string& callsign, const std::string& configKey, std::string& value) const;
     void resolveDynamicDirectories();
+    std::string getSystemConfigPath() const;
+    bool loadSystemConfig(std::unordered_map<std::string, std::string>& values) const;
+    void publishTelemetryMarker(const std::string& marker, const std::string& payload);
+    void publishHomeAppActiveTelemetry(uint64_t activeTimestampMs);
+    void recordSceneSetStartTimestamp();
+    void recordPreinstallStartTimestamp();
+    void recordPreinstallEndTimestamp();
+    void recordLaunchRequestTimestamp();
+    void setLastTerminationNature(TerminationNature nature);
+    static const char* toTerminationNatureString(TerminationNature nature);
 
     class AppManagerEventHandler : public Exchange::IAppManager::INotification {
     public:

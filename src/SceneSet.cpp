@@ -38,6 +38,22 @@
 #include <string_view>
 #include <optional>
 
+#ifndef SCENESET_TELEMETRY_METRICS_SUPPORT
+#define SCENESET_TELEMETRY_METRICS_SUPPORT 0
+#endif
+
+#if SCENESET_TELEMETRY_METRICS_SUPPORT
+#include <telemetry_busmessage_sender.h>
+#endif
+
+#ifndef ENABLE_FIRMWARE_CHANGE_DETECTION
+#define ENABLE_FIRMWARE_CHANGE_DETECTION 0
+#endif
+
+#if ENABLE_FIRMWARE_CHANGE_DETECTION
+#include "WPEFramework/interfaces/ISystemServices.h"
+#endif
+
 #ifndef GIT_SHORT_SHA
 #define GIT_SHORT_SHA "unknown"
 #endif
@@ -54,20 +70,60 @@
 #define APP_PREINSTALL_DIRECTORY ""
 #endif
 
+#ifndef ENABLE_SYSTEM_CONFIG
+#define ENABLE_SYSTEM_CONFIG 0
+#endif
+
+#ifndef ENABLE_CONFIG_OVERRIDE
+#define ENABLE_CONFIG_OVERRIDE 0
+#endif
+
+#ifndef RESTART_HOMEAPP_ALWAYS
+#define RESTART_HOMEAPP_ALWAYS 0
+#endif
+
+#ifndef DISABLE_CRASH_RECOVERY
+#define DISABLE_CRASH_RECOVERY 0
+#endif
+
+#ifndef DISABLE_HOMEAPP_RESTART_ON_NEW_VERSION
+#define DISABLE_HOMEAPP_RESTART_ON_NEW_VERSION 0
+#endif
+
 #define SCENESET_CONFIG_FILE "/opt/sceneset_app.conf"
+#define SCENESET_SYSTEM_CONFIG_FILE "/etc/sceneset.conf"
+#define SCENESET_OVERRIDE_CONFIG_FILE "/opt/sceneset.conf"
+#define FIRMWARE_VERSION_FILE "/version.txt"
+#define LAST_FIRMWARE_VERSION_MARKER "/opt/persistent/.sceneset_last_firmware_version"
 #define FACTORY_APPS_COPIED_MARKER "/opt/persistent/.sceneset_factory_apps_copied"
 
 namespace { // begin file-private constants and helpers
-constexpr const char* kPackageManagerRdkEmsCallsign = "org.rdk.PackageManagerRDKEMS";
+constexpr const char* kAppPackageManagerCallsign = "org.rdk.AppPackageManager";
 constexpr const char* kPackageManagerDownloadDirKey = "downloadDir";
 constexpr const char* kPreinstallDirectoryKey = "appPreinstallDirectory";
+constexpr const char* kPreinstallLocationSettingKey = "preinstallLocation";
+constexpr const char* kDefaultHomeAppSettingKey = "defaultHomeApp";
+constexpr const char* kDefaultHomeAppIntentSettingKey = "defaultHomeAppIntent";
+#if ENABLE_FIRMWARE_CHANGE_DETECTION
+constexpr const char* kSystemServicesCallsign = "org.rdk.System";
+#endif
 constexpr const char* kInitialDownloadSweepEnvVar = "SCENESET_INITIAL_DOWNLOAD_SWEEP";
+constexpr const char* kSceneSetSystemConfigEnvVar = "SCENESET_SYSTEM_CONFIG_FILE";
+#if ENABLE_CONFIG_OVERRIDE
+constexpr const char* kSceneSetOverrideConfigEnvVar = "SCENESET_OVERRIDE_CONFIG_FILE";
+#endif
 constexpr const char* kPackageInstallStateInstalled = "INSTALLED";
 constexpr const char* kPackageInstallStateInstalling = "INSTALLING";
+constexpr const char* kSceneSetHomeAppLaunchMarker = "ENTS_INFO_Sceneset_LaunchTime";
 constexpr std::chrono::milliseconds kDownloadedPackageSettleDelayMs(1000);
 
 using MetadataExtractor = bool (*)(const std::filesystem::path&, std::string&, std::string&);
 MetadataExtractor g_metadataExtractor = &ralf_support::ExtractPackageMetadata;
+
+uint64_t monotonicTimestampMs() {
+    return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
+}
 
 bool flushFileData(const std::filesystem::path& filePath) {
     int openFlags = O_RDONLY | O_CLOEXEC;
@@ -135,6 +191,63 @@ bool isEnvFlagEnabled(const char* envVarName, const bool defaultValue) {
               << "'. Using default=" << (defaultValue ? "enabled" : "disabled") << std::endl;
     return defaultValue;
 }
+
+std::string trimString(std::string value) {
+    auto isNotSpace = [](unsigned char ch) {
+        return !std::isspace(ch);
+    };
+
+    value.erase(value.begin(), std::find_if(value.begin(), value.end(), isNotSpace));
+    value.erase(std::find_if(value.rbegin(), value.rend(), isNotSpace).base(), value.end());
+    return value;
+}
+
+std::string stripSurroundingQuotes(std::string value) {
+    if (value.size() >= 2) {
+        const char first = value.front();
+        const char last = value.back();
+        if ((first == '"' && last == '"') || (first == '\'' && last == '\'')) {
+            value = value.substr(1, value.size() - 2);
+        }
+    }
+    return value;
+}
+
+bool splitKeyValueLine(const std::string& line, std::string& key, std::string& value) {
+    const std::size_t eqPos = line.find('=');
+    if (eqPos == std::string::npos) {
+        return false;
+    }
+
+    key = trimString(line.substr(0, eqPos));
+    value = trimString(line.substr(eqPos + 1));
+    return !key.empty();
+}
+
+bool parseSystemConfig(const std::string& configPath, std::unordered_map<std::string, std::string>& values) {
+    std::ifstream configFile(configPath);
+    if (!configFile.is_open()) {
+        return false;
+    }
+
+    std::string line;
+    while (std::getline(configFile, line)) {
+        std::string trimmedLine = trimString(line);
+        if (trimmedLine.empty() || trimmedLine[0] == '#') {
+            continue;
+        }
+
+        std::string key;
+        std::string rawValue;
+        if (!splitKeyValueLine(trimmedLine, key, rawValue)) {
+            continue;
+        }
+
+        values[key] = trimString(stripSurroundingQuotes(rawValue));
+    }
+
+    return true;
+}
 } // end file-private constants and helpers
 
 static std::string getDefaultAppName() {
@@ -157,7 +270,8 @@ static std::string getDefaultAppName() {
 }
 
 SceneSetApp::SceneSetApp()
-    : m_isActive(false), m_lock(), m_appManager(nullptr), m_preinstallManager(nullptr), m_packageInstaller(nullptr), m_appManagerEventHandler(nullptr), m_preinstallManagerEventHandler(nullptr), m_packageInstallerEventHandler(nullptr), m_appmgrCallsign("org.rdk.AppManager"), m_preinstallCallsign("org.rdk.PreinstallManager"), m_referenceAppId(getDefaultAppName()), m_comrpcPath("/tmp/communicator"), m_downloadDirectory(""), m_preinstallDirectory(APP_PREINSTALL_DIRECTORY), m_launchThread(nullptr), m_stopLaunchThread(false), m_appLaunched(false), m_pendingRestart(false), m_launchThreadMutex(), m_downloadMonitorThread(nullptr), m_stopDownloadMonitorThread(false), m_downloadMonitorMutex(), m_preinstallCompletionThread(nullptr), m_preinstallCompletionThreadMutex(), m_waitingForStartupPreinstallCompletion(false), m_startupPreinstallHasFailure(false) {
+    : m_isActive(false), m_lock(), m_appManager(nullptr), m_preinstallManager(nullptr), m_packageInstaller(nullptr), m_appManagerEventHandler(nullptr), m_preinstallManagerEventHandler(nullptr), m_packageInstallerEventHandler(nullptr), m_appmgrCallsign("org.rdk.AppManager"), m_preinstallCallsign("org.rdk.PreinstallManager"), m_referenceAppId(getDefaultAppName()), m_comrpcPath("/tmp/communicator"), m_downloadDirectory(""), m_preinstallDirectory(APP_PREINSTALL_DIRECTORY), m_launchThread(nullptr), m_stopLaunchThread(false), m_appLaunched(false), m_pendingRestart(false), m_launchThreadMutex(), m_downloadMonitorThread(nullptr), m_stopDownloadMonitorThread(false), m_downloadMonitorMutex(), m_preinstallCompletionThread(nullptr) {
+    m_telemetryMetricsState.sceneSetStartTsMs = monotonicTimestampMs();
 }
 
 SceneSetApp::~SceneSetApp() {
@@ -173,6 +287,18 @@ SceneSetApp::~SceneSetApp() {
 }
 
 bool SceneSetApp::initialize() {
+    recordSceneSetStartTimestamp();
+    m_telemetryMetricsState.preinstallStartTsMs = 0;
+    m_telemetryMetricsState.preinstallEndTsMs = 0;
+    m_telemetryMetricsState.lastLaunchRequestTsMs = 0;
+    m_telemetryMetricsState.pendingActiveTelemetry = false;
+    m_telemetryMetricsState.cumulativeRelaunchCount = 0;
+    m_telemetryMetricsState.lastTerminationNature = static_cast<int>(TerminationNature::NONE);
+#ifdef UNIT_TEST
+    m_lastTelemetryMarker.clear();
+    m_lastTelemetryPayload.clear();
+#endif
+
     // Block termination signals for this thread before initialization work;
     // new threads inherit this mask and waitForTermSignal() consumes via sigwait().
     // Save the old mask so we can restore it on early failure returns.
@@ -266,9 +392,9 @@ bool SceneSetApp::initialize() {
     }
 
     std::cout << "PackageManager COMRPC client created successfully" << std::endl;
-    m_packageInstaller = packageManagerClient->Open<Exchange::IPackageInstaller>(kPackageManagerRdkEmsCallsign);
+    m_packageInstaller = packageManagerClient->Open<Exchange::IPackageInstaller>(kAppPackageManagerCallsign);
     if (m_packageInstaller == nullptr) {
-        std::cerr << "Failed to open IPackageInstaller interface for " << kPackageManagerRdkEmsCallsign << std::endl;
+        std::cerr << "Failed to open IPackageInstaller interface for " << kAppPackageManagerCallsign << std::endl;
         if (m_preinstallManager != nullptr) {
             m_preinstallManager->Release();
             m_preinstallManager = nullptr;
@@ -281,13 +407,62 @@ bool SceneSetApp::initialize() {
         return false;
     }
 
-    std::cout << "Successfully opened " << kPackageManagerRdkEmsCallsign << " installer interface" << std::endl;
+    std::cout << "Successfully opened " << kAppPackageManagerCallsign << " installer interface" << std::endl;
 
     resolveDynamicDirectories();
-    if (m_preinstallDirectory.empty()) {
-        // Fall back to compile-time default if dynamic lookup did not yield a value.
-        m_preinstallDirectory = APP_PREINSTALL_DIRECTORY;
+
+    std::string preinstallDirectorySource = "PreinstallManager plugin config";
+    std::unordered_map<std::string, std::string> systemConfig;
+    if (loadSystemConfig(systemConfig))
+    {
+        const auto preinstallIt = systemConfig.find(kPreinstallLocationSettingKey);
+        if (preinstallIt != systemConfig.end())
+        {
+            const std::string preinstallLocationFromConfig = preinstallIt->second;
+            if (preinstallLocationFromConfig.empty())
+            {
+                std::cerr << "Ignoring empty preinstallLocation in system config" << std::endl;
+            }
+            else if (!std::filesystem::path(preinstallLocationFromConfig).is_absolute())
+            {
+                std::cerr << "Ignoring non-absolute preinstallLocation in system config: "
+                          << preinstallLocationFromConfig << std::endl;
+            }
+            else
+            {
+                m_preinstallDirectory = preinstallLocationFromConfig;
+                preinstallDirectorySource = "system config preinstallLocation";
+            }
+        }
+
+        const auto defaultHomeAppIt = systemConfig.find(kDefaultHomeAppSettingKey);
+        if (defaultHomeAppIt != systemConfig.end())
+        {
+            if (!defaultHomeAppIt->second.empty())
+            {
+                m_referenceAppId = defaultHomeAppIt->second;
+                std::cout << "Using defaultHomeApp from system config: " << m_referenceAppId << std::endl;
+            }
+            else
+            {
+                std::cerr << "Ignoring empty defaultHomeApp in system config" << std::endl;
+            }
+        }
+
+        const auto defaultHomeAppIntentIt = systemConfig.find(kDefaultHomeAppIntentSettingKey);
+        if (defaultHomeAppIntentIt != systemConfig.end() && !defaultHomeAppIntentIt->second.empty())
+        {
+            m_defaultHomeAppIntent = defaultHomeAppIntentIt->second;
+            std::cout << "Using defaultHomeAppIntent from system config: " << m_defaultHomeAppIntent << std::endl;
+        }
     }
+
+    if (m_preinstallDirectory.empty()) {
+        // Fall back to compile-time default if runtime lookup did not yield a value.
+        m_preinstallDirectory = APP_PREINSTALL_DIRECTORY;
+        preinstallDirectorySource = "compile-time APP_PREINSTALL_DIRECTORY";
+    }
+
     if (m_preinstallDirectory.empty()) {
         std::cerr << "No valid appPreinstallDirectory configured, cannot proceed." << std::endl;
         if (m_preinstallManager != nullptr) {
@@ -305,6 +480,8 @@ bool SceneSetApp::initialize() {
         restoreMaskOnExit();
         return false;
     }
+    std::cout << "Resolved preinstall directory from " << preinstallDirectorySource
+              << ": " << m_preinstallDirectory << std::endl;
     if (m_downloadDirectory.empty()) {
         std::cout << "downloadDir is empty. Reference app update monitoring will remain disabled." << std::endl;
     }
@@ -313,6 +490,11 @@ bool SceneSetApp::initialize() {
         lock_guard<mutex> lkgd(m_lock);
         m_isActive = true;
     }
+
+#if SCENESET_TELEMETRY_METRICS_SUPPORT
+    static char kT2ComponentName[] = "sceneset";
+    t2_init(kT2ComponentName);
+#endif
 
     cout << "Registered to AppManager. Waiting for term signal via sigwait" << endl;
     return m_isActive;
@@ -345,7 +527,11 @@ bool SceneSetApp::registerForPackageInstallerEvents() {
         m_packageInstallerEventHandler = std::make_shared<PackageInstallerEventHandler>();
     }
     if (m_packageInstaller != nullptr) {
-        m_packageInstaller->Register(m_packageInstallerEventHandler.get());
+        const Core::hresult result = m_packageInstaller->Register(m_packageInstallerEventHandler.get());
+        if (result != Core::ERROR_NONE) {
+            std::cerr << "PackageManager Register failed: " << result << std::endl;
+            return false;
+        }
         return true;
     }
     return false;
@@ -405,11 +591,13 @@ bool SceneSetApp::launchDefaultApp() {
         return false;
     }
     std::cout << "Launching default app: " << m_referenceAppId << std::endl;
-    Core::hresult result = m_appManager->LaunchApp(m_referenceAppId, "", "");
+    Core::hresult result = m_appManager->LaunchApp(m_referenceAppId, m_defaultHomeAppIntent, "");
     if (result != Core::ERROR_NONE) {
         std::cerr << "LaunchApp failed with error code: " << result << std::endl;
+        m_telemetryMetricsState.pendingActiveTelemetry = false;
         return false;
     }
+    recordLaunchRequestTimestamp();
     return true;
 }
 
@@ -435,6 +623,7 @@ bool SceneSetApp::startPreinstall(bool forceInstall) {
         std::cerr << "PreinstallManager is not initialized, cannot start preinstall." << std::endl;
         return false;
     }
+    recordPreinstallStartTimestamp();
     std::cout << "Starting preinstall with forceInstall=" << (forceInstall ? "true" : "false") << std::endl;
     Core::hresult result = m_preinstallManager->StartPreinstall(forceInstall);
     if (result != Core::ERROR_NONE) {
@@ -473,8 +662,14 @@ bool SceneSetApp::isReferenceAppInstalled() {
 }
 
 bool SceneSetApp::isFactoryAppsCopied() {
-    if (std::filesystem::exists(FACTORY_APPS_COPIED_MARKER)) {
-        std::cout << "Factory apps marker file exists at: " << FACTORY_APPS_COPIED_MARKER << std::endl;
+#ifdef UNIT_TEST
+    const std::string markerPath = m_factoryAppsCopiedMarkerOverride.empty()
+        ? std::string(FACTORY_APPS_COPIED_MARKER) : m_factoryAppsCopiedMarkerOverride;
+#else
+    const std::string markerPath = FACTORY_APPS_COPIED_MARKER;
+#endif
+    if (std::filesystem::exists(markerPath)) {
+        std::cout << "Factory apps marker file exists at: " << markerPath << std::endl;
         return true;
     }
     std::cout << "Factory apps marker file does not exist. This is the first boot." << std::endl;
@@ -482,26 +677,179 @@ bool SceneSetApp::isFactoryAppsCopied() {
 }
 
 void SceneSetApp::markFactoryAppsCopied() {
-    std::ofstream markerFile(FACTORY_APPS_COPIED_MARKER);
+#ifdef UNIT_TEST
+    const std::string markerPath = m_factoryAppsCopiedMarkerOverride.empty()
+        ? std::string(FACTORY_APPS_COPIED_MARKER) : m_factoryAppsCopiedMarkerOverride;
+#else
+    const std::string markerPath = FACTORY_APPS_COPIED_MARKER;
+#endif
+    std::ofstream markerFile(markerPath);
     if (markerFile.is_open()) {
         markerFile << "Factory apps copied on first boot" << std::endl;
         markerFile.close();
-        std::cout << "Factory apps marker file created at: " << FACTORY_APPS_COPIED_MARKER << std::endl;
+        if (!flushFileData(markerPath)) {
+            std::cerr << "Failed to flush factory apps marker file at: " << markerPath << std::endl;
+        }
+        std::cout << "Factory apps marker file created at: " << markerPath << std::endl;
     } else {
-        std::cerr << "Failed to create factory apps marker file at: " << FACTORY_APPS_COPIED_MARKER << std::endl;
+        std::cerr << "Failed to create factory apps marker file at: " << markerPath << std::endl;
     }
 }
+
+#if ENABLE_FIRMWARE_CHANGE_DETECTION
+std::string SceneSetApp::readCurrentFirmwareVersionFromSystem() const {
+    const std::string thunderAccessPath = getThunderAccessPath();
+    auto client = Core::ProxyType<RPC::CommunicatorClient>::Create(
+        Core::NodeId(thunderAccessPath.c_str()));
+    if (!client.IsValid()) {
+        std::cerr << "Failed to create COMRPC client for SystemServices" << std::endl;
+        return "";
+    }
+
+    Exchange::ISystemServices* systemServices = client->Open<Exchange::ISystemServices>(kSystemServicesCallsign);
+    if (systemServices == nullptr) {
+        std::cerr << "Failed to open ISystemServices interface on " << kSystemServicesCallsign << std::endl;
+        return "";
+    }
+
+    Exchange::ISystemServices::DownloadedFirmwareInfo info{};
+    const Core::hresult result = systemServices->GetDownloadedFirmwareInfo(info);
+    systemServices->Release();
+
+    if (result != Core::ERROR_NONE) {
+        std::cerr << "GetDownloadedFirmwareInfo failed with error code: " << result << std::endl;
+        return "";
+    }
+
+    if (!info.success) {
+        std::cerr << "GetDownloadedFirmwareInfo reported failure: " << info.errorMessage << std::endl;
+        return "";
+    }
+
+    return info.currentFWVersion;
+}
+
+std::string SceneSetApp::readCurrentFirmwareVersion() const {
+    // Primary: query the System plugin via COMRPC.
+    const std::string systemVersion = readCurrentFirmwareVersionFromSystem();
+    if (!systemVersion.empty()) {
+        std::cout << "Current firmware version from System plugin: " << systemVersion << std::endl;
+        return systemVersion;
+    }
+
+    // Fallback: read directly from the firmware version file on disk.
+#ifdef UNIT_TEST
+    const std::string firmwareVersionFile = m_firmwareVersionFileOverride.empty()
+        ? std::string(FIRMWARE_VERSION_FILE) : m_firmwareVersionFileOverride;
+#else
+    const std::string firmwareVersionFile = FIRMWARE_VERSION_FILE;
+#endif
+    std::cerr << "System plugin unavailable; falling back to firmware version file: " << firmwareVersionFile << std::endl;
+    std::ifstream file(firmwareVersionFile);
+    if (!file.is_open()) {
+        std::cerr << "Failed to open firmware version file: " << firmwareVersionFile << std::endl;
+        return "";
+    }
+    std::string line;
+    while (std::getline(file, line)) {
+        constexpr const char* prefix = "imagename:";
+        constexpr std::size_t prefixLen = 10; // strlen("imagename:")
+        if (line.rfind(prefix, 0) == 0) {
+            std::string version = line.substr(prefixLen);
+            const auto start = version.find_first_not_of(" \t\r\n");
+            if (start == std::string::npos) return "";
+            const auto end = version.find_last_not_of(" \t\r\n");
+            return version.substr(start, end - start + 1);
+        }
+    }
+    std::cerr << "No 'imagename:' line found in firmware version file: " << firmwareVersionFile << std::endl;
+    return "";
+}
+
+std::string SceneSetApp::readLastBootFirmwareVersion() const {
+#ifdef UNIT_TEST
+    const std::string markerPath = m_lastFirmwareVersionMarkerOverride.empty()
+        ? std::string(LAST_FIRMWARE_VERSION_MARKER) : m_lastFirmwareVersionMarkerOverride;
+#else
+    const std::string markerPath = LAST_FIRMWARE_VERSION_MARKER;
+#endif
+    std::ifstream file(markerPath);
+    if (!file.is_open()) {
+        std::cout << "No last firmware version marker found at: " << markerPath << std::endl;
+        return "";
+    }
+    std::string version;
+    std::getline(file, version);
+    const auto start = version.find_first_not_of(" \t\r\n");
+    if (start == std::string::npos) return "";
+    const auto end = version.find_last_not_of(" \t\r\n");
+    return version.substr(start, end - start + 1);
+}
+
+void SceneSetApp::storeCurrentFirmwareVersion() {
+    const std::string currentVersion = readCurrentFirmwareVersion();
+    if (currentVersion.empty()) {
+        // Don't persist an unknown version; next boot retries the first-boot flow.
+        std::cerr << "Current firmware version unavailable; not updating last-firmware-version marker." << std::endl;
+        return;
+    }
+#ifdef UNIT_TEST
+    const std::string markerPath = m_lastFirmwareVersionMarkerOverride.empty()
+        ? std::string(LAST_FIRMWARE_VERSION_MARKER) : m_lastFirmwareVersionMarkerOverride;
+#else
+    const std::string markerPath = LAST_FIRMWARE_VERSION_MARKER;
+#endif
+    std::ofstream file(markerPath);
+    if (file.is_open()) {
+        file << currentVersion << std::endl;
+        file.close();
+        std::cout << "Stored current firmware version '" << currentVersion << "' at: " << markerPath << std::endl;
+    } else {
+        std::cerr << "Failed to store current firmware version at: " << markerPath << std::endl;
+    }
+}
+
+bool SceneSetApp::isFirmwareChanged() const {
+    const std::string currentVersion = readCurrentFirmwareVersion();
+    const std::string lastVersion = readLastBootFirmwareVersion();
+
+    if (currentVersion.empty()) {
+        std::cout << "Could not determine current firmware version. Treating as firmware changed." << std::endl;
+        return true;
+    }
+
+    if (lastVersion.empty()) {
+        std::cout << "No previous firmware version stored. Treating as firmware changed (first boot)." << std::endl;
+        return true;
+    }
+
+    if (currentVersion != lastVersion) {
+        std::cout << "Firmware changed from '" << lastVersion << "' to '" << currentVersion << "'. Treating as first boot." << std::endl;
+        return true;
+    }
+
+    std::cout << "Firmware version unchanged: '" << currentVersion << "'. Normal boot." << std::endl;
+    return false;
+}
+#endif // ENABLE_FIRMWARE_CHANGE_DETECTION
 
 bool SceneSetApp::copyFactoryAppsToPreinstall() {
     namespace fs = std::filesystem;
 
-    std::cout << "Copying factory apps from " << FACTORY_APP_PATH << " to " << m_preinstallDirectory << std::endl;
+#ifdef UNIT_TEST
+    const std::string factoryAppPath = m_factoryAppPathOverride.empty()
+        ? std::string(FACTORY_APP_PATH) : m_factoryAppPathOverride;
+#else
+    const std::string factoryAppPath = FACTORY_APP_PATH;
+#endif
 
-    fs::path sourcePath(FACTORY_APP_PATH);
+    std::cout << "Copying factory apps from " << factoryAppPath << " to " << m_preinstallDirectory << std::endl;
+
+    fs::path sourcePath(factoryAppPath);
     fs::path destPath(m_preinstallDirectory);
 
     if (!fs::exists(sourcePath)) {
-        std::cerr << "Failed to open factory apps location: " << FACTORY_APP_PATH << std::endl;
+        std::cerr << "Failed to open factory apps location: " << factoryAppPath << std::endl;
         return false;
     }
 
@@ -518,6 +866,7 @@ bool SceneSetApp::copyFactoryAppsToPreinstall() {
 
     // Copy bundle files from factory location to preinstall folder
     int fileCount = 0;
+    int failedCount = 0;
 
     try {
         for (const auto& entry : fs::directory_iterator(sourcePath)) {
@@ -541,6 +890,7 @@ bool SceneSetApp::copyFactoryAppsToPreinstall() {
             } catch (const fs::filesystem_error& e) {
                 std::cerr << "Failed to copy bundle: " << fileName
                           << " - " << e.what() << std::endl;
+                failedCount++;
             }
         }
     } catch (const fs::filesystem_error& e) {
@@ -550,13 +900,29 @@ bool SceneSetApp::copyFactoryAppsToPreinstall() {
 
     if (fileCount > 0) {
         std::cout << "Successfully copied " << fileCount << " factory app bundles to preinstall folder" << std::endl;
-        markFactoryAppsCopied();
-        return true;
     } else {
         std::cout << "No factory app bundles found to copy" << std::endl;
-        markFactoryAppsCopied();
-        return true;
     }
+    // The first boot is only recorded once the preinstall has succeeded (completeStartupAfterPreinstall):
+    // marking it here would make an interrupted first boot look complete.
+    if (failedCount > 0) {
+        std::cerr << "Failed to copy " << failedCount << " factory app bundles" << std::endl;
+        return false;
+    }
+    return true;
+}
+
+// First boot: copy the factory apps to the preinstall folder. With the marker strategy the first boot is
+// recorded only after the copy and the forced preinstall succeeded (completeStartupAfterPreinstall).
+void SceneSetApp::prepareFactoryAppsForFirstBoot() {
+    std::cout << "First boot/Factory reset detected. Copying factory apps to preinstall folder." << std::endl;
+    const bool factoryAppsCopied = copyFactoryAppsToPreinstall();
+    if (!factoryAppsCopied) {
+        std::cerr << "Failed to copy factory apps. Continuing with preinstall anyway." << std::endl;
+    }
+#if !ENABLE_FIRMWARE_CHANGE_DETECTION
+    m_startupPreinstallState.markFactoryAppsCopiedOnSuccess = factoryAppsCopied;
+#endif
 }
 
 void SceneSetApp::cleanupPreinstallFolder() {
@@ -606,7 +972,7 @@ void SceneSetApp::cleanupPreinstallFolder() {
 
 void SceneSetApp::completeStartupAfterPreinstall() {
     bool expected = true;
-    if (!m_waitingForStartupPreinstallCompletion.compare_exchange_strong(expected, false)) {
+    if (!m_startupPreinstallState.waitingForCompletion.compare_exchange_strong(expected, false)) {
         return;
     }
 
@@ -615,9 +981,22 @@ void SceneSetApp::completeStartupAfterPreinstall() {
         return;
     }
 
+    recordPreinstallEndTimestamp();
+
     std::cout << "Preinstall phase finished. Continuing startup flow." << std::endl;
     if (isStartupPreinstallSucceed()) {
         cleanupPreinstallFolder();
+        // The installed packages must be on disk before the first boot is recorded as done:
+        // after a power loss the next boot would otherwise skip packages left empty or partial.
+        ::sync();
+#if ENABLE_FIRMWARE_CHANGE_DETECTION
+        // Record the firmware as the new datasource only after preinstall succeeds.
+        storeCurrentFirmwareVersion();
+#else
+        if (m_startupPreinstallState.markFactoryAppsCopiedOnSuccess.exchange(false)) {
+            markFactoryAppsCopied();
+        }
+#endif
     } else {
         std::cerr << "Startup preinstall reported a failure state before completion. Preserving files in preinstall folder for retry." << std::endl;
     }
@@ -629,7 +1008,15 @@ void SceneSetApp::completeStartupAfterPreinstall() {
 }
 
 void SceneSetApp::resetStartupPreinstallStatusTracking() {
-    m_startupPreinstallHasFailure = false;
+    m_startupPreinstallState.hasFailure = false;
+}
+
+void SceneSetApp::beginStartupPreinstallStatusTracking(bool statusEventsRegistered) {
+    resetStartupPreinstallStatusTracking();
+    if (!statusEventsRegistered) {
+        // Without package status events a failed install cannot be detected: treat the preinstall as unverified.
+        m_startupPreinstallState.hasFailure = true;
+    }
 }
 
 void SceneSetApp::recordStartupPreinstallStatus(const std::string& jsonresponse) {
@@ -691,13 +1078,13 @@ void SceneSetApp::recordStartupPreinstallStatus(const std::string& jsonresponse)
         if (state != kPackageInstallStateInstalled && state != kPackageInstallStateInstalling) {
             std::cerr << "Preinstall package '" << packageKey
                       << "' reported unexpected state '" << state << "'; marking preinstall as failed." << std::endl;
-            m_startupPreinstallHasFailure = true;
+            m_startupPreinstallState.hasFailure = true;
         }
     }
 }
 
 bool SceneSetApp::isStartupPreinstallSucceed() const {
-    if (m_startupPreinstallHasFailure) {
+    if (m_startupPreinstallState.hasFailure) {
         std::cerr << "One or more preinstall packages reported a failure state." << std::endl;
         return false;
     }
@@ -808,27 +1195,33 @@ void SceneSetApp::run() {
         std::cerr << "Failed to register for AppManager events" << std::endl;
     }
 
-    // Determine if this is a Factory Setting Reset (FSR) / first boot scenario
+    // Determine if this is a Factory Setting Reset (FSR) / first boot scenario.
+#if ENABLE_FIRMWARE_CHANGE_DETECTION
+    // A first boot is triggered whenever the current firmware version differs from
+    // the firmware version recorded during the previous boot.
+    bool isFactoryReset = isFirmwareChanged();
+#else
+    // A first boot is detected via the persistent factory-apps-copied marker file.
     bool isFactoryReset = !isFactoryAppsCopied();
+#endif
 
     // Copy factory apps to preinstall folder on first boot only
     if (isFactoryReset) {
-        std::cout << "First boot/Factory reset detected. Copying factory apps to preinstall folder." << std::endl;
-        if (!copyFactoryAppsToPreinstall()) {
-            std::cerr << "Failed to copy factory apps. Continuing with preinstall anyway." << std::endl;
-        }
+        prepareFactoryAppsForFirstBoot();
     } else {
-        std::cout << "Factory apps already copied on first boot. Skipping copy." << std::endl;
+        std::cout << "Not a first boot. Skipping factory app copy." << std::endl;
     }
 
     // Start preinstall asynchronously.
     // Use forceInstall=true for FSR cases (force reinstall all packages)
     // Use forceInstall=false for normal boots (only install if newer version)
-    resetStartupPreinstallStatusTracking();
-    m_waitingForStartupPreinstallCompletion = true;
+    beginStartupPreinstallStatusTracking(packageInstallerEventsRegistered);
+    m_startupPreinstallState.waitingForCompletion = true;
     std::cout << "Starting preinstall process and waiting for OnPreinstallationComplete" << std::endl;
     if (!startPreinstall(isFactoryReset)) {
         std::cerr << "Failed to start preinstall process. Continuing startup flow without deleting preinstall files." << std::endl;
+        // Preinstall never ran: mark it failed so the folder is preserved and the firmware datasource is not advanced.
+        m_startupPreinstallState.hasFailure = true;
         completeStartupAfterPreinstall();
     } else {
         if (!preinstallEventsRegistered) {
@@ -853,6 +1246,10 @@ void SceneSetApp::AppManagerEventHandler::OnAppInstalled(const string &appId, co
 
     SceneSetApp& instance = SceneSetApp::getInstance();
     if (!instance.m_referenceAppId.empty() && appId == instance.m_referenceAppId) {
+#if DISABLE_HOMEAPP_RESTART_ON_NEW_VERSION
+        std::cout << "New version of reference app '" << appId << "' (version: " << version
+                  << ") installed. Auto kill/relaunch feature on install is disabled." << std::endl;
+#else
         if (instance.m_appLaunched) {
             std::cout << "New version of reference app '" << appId << "' (version: " << version << ") installed. App is running, killing and restarting reference app." << std::endl;
             // Kill the running app  before launching the new version
@@ -866,6 +1263,7 @@ void SceneSetApp::AppManagerEventHandler::OnAppInstalled(const string &appId, co
                 instance.m_pendingRestart = false;
             }
         }
+#endif
     }
 }
 
@@ -884,19 +1282,52 @@ void SceneSetApp::AppManagerEventHandler::OnAppLifecycleStateChanged(const strin
         if (newState == Exchange::IAppManager::AppLifecycleState::APP_STATE_RUNNING ||
             newState == Exchange::IAppManager::AppLifecycleState::APP_STATE_ACTIVE) {
             instance.m_appLaunched = true;
+            if (newState == Exchange::IAppManager::AppLifecycleState::APP_STATE_ACTIVE) {
+                const bool shouldPublishTelemetry = instance.m_telemetryMetricsState.pendingActiveTelemetry.exchange(false);
+                if (shouldPublishTelemetry) {
+                    instance.publishHomeAppActiveTelemetry(monotonicTimestampMs());
+                }
+            }
         } else if (newState == Exchange::IAppManager::AppLifecycleState::APP_STATE_UNLOADED) {
             instance.m_appLaunched = false;
+
+            bool shouldRestart = false;
+            if (oldState == Exchange::IAppManager::AppLifecycleState::APP_STATE_TERMINATING) {
+                if (instance.m_pendingRestart) {
+                    instance.setLastTerminationNature(TerminationNature::INTENTIONAL_KILL);
+                } else if (errorReason == Exchange::IAppManager::AppErrorReason::APP_ERROR_ABORT) {
+                    instance.setLastTerminationNature(TerminationNature::CRASH);
+                } else {
+                    instance.setLastTerminationNature(TerminationNature::INTENTIONAL_KILL);
+                }
+            }
 
             // Check if we need to restart after new version installation
             if (instance.m_pendingRestart) {
                 std::cout << "App reached UNLOADED state after new version installation. Restarting with new version." << std::endl;
                 instance.m_pendingRestart = false;
-                instance.startLaunchThread();
+                shouldRestart = true;
             }
-            // Handle ABORT error case for crash restart (only if not pending restart from new version)
-            else if (oldState == Exchange::IAppManager::AppLifecycleState::APP_STATE_TERMINATING &&
-                     errorReason == Exchange::IAppManager::AppErrorReason::APP_ERROR_ABORT) {
-                std::cout << "App " << appId << " terminated with ABORT error. Restarting reference app." << std::endl;
+            else if (oldState == Exchange::IAppManager::AppLifecycleState::APP_STATE_TERMINATING) {
+#if RESTART_HOMEAPP_ALWAYS
+                // Optional build behavior: restart on any TERMINATING->UNLOADED transition.
+                std::cout << "App " << appId << " terminated. Restarting reference app due to RESTART_HOMEAPP_ALWAYS." << std::endl;
+                std::cout << "Termination error reason: " << static_cast<int>(errorReason) << std::endl;
+                shouldRestart = true;
+#elif !DISABLE_CRASH_RECOVERY
+                // Default behavior: restart only for ABORT terminations.
+                // Disable with -DDISABLE_CRASH_RECOVERY=ON when HomeAppManager owns crash recovery.
+                if (errorReason == Exchange::IAppManager::AppErrorReason::APP_ERROR_ABORT) {
+                    std::cout << "App " << appId << " terminated with ABORT error. Restarting reference app." << std::endl;
+                    shouldRestart = true;
+                }
+#else
+                std::cout << "App " << appId << " terminated. Crash recovery disabled (DISABLE_CRASH_RECOVERY=ON)." << std::endl;
+#endif
+            }
+
+            if (shouldRestart) {
+                instance.m_telemetryMetricsState.cumulativeRelaunchCount.fetch_add(1);
                 instance.startLaunchThread();
             }
         } else if (newState == Exchange::IAppManager::AppLifecycleState::APP_STATE_TERMINATING) {
@@ -997,7 +1428,7 @@ void SceneSetApp::startPreinstallCompletionThread() {
         return;
     }
 
-    std::lock_guard<std::mutex> lock(m_preinstallCompletionThreadMutex);
+    std::lock_guard<std::mutex> lock(m_startupPreinstallState.completionThreadMutex);
     if (m_preinstallCompletionThread && m_preinstallCompletionThread->joinable()) {
         std::cout << "Preinstall completion thread already running, skipping duplicate start." << std::endl;
         return;
@@ -1010,7 +1441,7 @@ void SceneSetApp::startPreinstallCompletionThread() {
 void SceneSetApp::stopPreinstallCompletionThread() {
     std::unique_ptr<std::thread> threadToJoin;
     {
-        std::lock_guard<std::mutex> lock(m_preinstallCompletionThreadMutex);
+        std::lock_guard<std::mutex> lock(m_startupPreinstallState.completionThreadMutex);
         if (m_preinstallCompletionThread && m_preinstallCompletionThread->joinable()) {
             threadToJoin = std::move(m_preinstallCompletionThread);
         } else {
@@ -1464,15 +1895,149 @@ void SceneSetApp::resolveDynamicDirectories() {
     std::string downloadDir;
     std::string preinstallDir;
 
-    if (fetchPluginConfigValue(kPackageManagerRdkEmsCallsign, kPackageManagerDownloadDirKey, downloadDir)) {
+    if (fetchPluginConfigValue(kAppPackageManagerCallsign, kPackageManagerDownloadDirKey, downloadDir)) {
         m_downloadDirectory = downloadDir;
-        std::cout << "Updated downloadDir from PackageManagerRDKEMS plugin config: " << m_downloadDirectory << std::endl;
+        std::cout << "Updated downloadDir from AppPackageManager plugin config: " << m_downloadDirectory << std::endl;
     }
 
     if (fetchPluginConfigValue(m_preinstallCallsign, kPreinstallDirectoryKey, preinstallDir)) {
         m_preinstallDirectory = preinstallDir;
         std::cout << "Updated appPreinstallDirectory from PreinstallManager plugin config: " << m_preinstallDirectory << std::endl;
     }
+}
+
+std::string SceneSetApp::getSystemConfigPath() const {
+    const char* configuredPath = std::getenv(kSceneSetSystemConfigEnvVar);
+    if (configuredPath != nullptr && configuredPath[0] != '\0') {
+        return configuredPath;
+    }
+    return SCENESET_SYSTEM_CONFIG_FILE;
+}
+
+bool SceneSetApp::loadSystemConfig(std::unordered_map<std::string, std::string>& values) const {
+    values.clear();
+
+#if !ENABLE_SYSTEM_CONFIG
+    return false;
+#else
+    const std::string configPath = getSystemConfigPath();
+    if (!parseSystemConfig(configPath, values)) {
+        return false;
+    }
+
+#if ENABLE_CONFIG_OVERRIDE
+    std::string overrideConfigPath = SCENESET_OVERRIDE_CONFIG_FILE;
+    const char* configuredOverridePath = std::getenv(kSceneSetOverrideConfigEnvVar);
+    if (configuredOverridePath != nullptr && configuredOverridePath[0] != '\0') {
+        overrideConfigPath = configuredOverridePath;
+    }
+
+    std::unordered_map<std::string, std::string> overrideValues;
+    if (parseSystemConfig(overrideConfigPath, overrideValues)) {
+        for (const auto& [key, value] : overrideValues) {
+            values[key] = value;
+        }
+        std::cout << "Applied override config from " << overrideConfigPath << std::endl;
+    }
+#endif
+
+    return true;
+#endif
+}
+
+void SceneSetApp::recordSceneSetStartTimestamp() {
+    m_telemetryMetricsState.sceneSetStartTsMs = monotonicTimestampMs();
+}
+
+void SceneSetApp::recordPreinstallStartTimestamp() {
+    m_telemetryMetricsState.preinstallStartTsMs = monotonicTimestampMs();
+}
+
+void SceneSetApp::recordPreinstallEndTimestamp() {
+    m_telemetryMetricsState.preinstallEndTsMs = monotonicTimestampMs();
+}
+
+void SceneSetApp::recordLaunchRequestTimestamp() {
+    m_telemetryMetricsState.lastLaunchRequestTsMs = monotonicTimestampMs();
+    m_telemetryMetricsState.pendingActiveTelemetry = true;
+}
+
+void SceneSetApp::setLastTerminationNature(TerminationNature nature) {
+    m_telemetryMetricsState.lastTerminationNature = static_cast<int>(nature);
+}
+
+const char* SceneSetApp::toTerminationNatureString(TerminationNature nature) {
+    switch (nature) {
+    case TerminationNature::CRASH:
+        return "crash";
+    case TerminationNature::INTENTIONAL_KILL:
+        return "intentional_kill";
+    case TerminationNature::NONE:
+    default:
+        return "none";
+    }
+}
+
+void SceneSetApp::publishHomeAppActiveTelemetry(uint64_t activeTimestampMs) {
+    const uint64_t sceneSetStartTsMs = m_telemetryMetricsState.sceneSetStartTsMs.load();
+    const uint64_t preinstallStartTsMs = m_telemetryMetricsState.preinstallStartTsMs.load();
+    const uint64_t preinstallEndTsMs = m_telemetryMetricsState.preinstallEndTsMs.load();
+    const uint64_t launchRequestTsMs = m_telemetryMetricsState.lastLaunchRequestTsMs.load();
+
+    const uint64_t totalStartToActiveMs =
+        (sceneSetStartTsMs > 0 && activeTimestampMs >= sceneSetStartTsMs)
+            ? (activeTimestampMs - sceneSetStartTsMs)
+            : 0;
+    const uint64_t preinstallDurationMs =
+        (preinstallStartTsMs > 0 && preinstallEndTsMs >= preinstallStartTsMs)
+            ? (preinstallEndTsMs - preinstallStartTsMs)
+            : 0;
+    const uint64_t launchToActiveMs =
+        (launchRequestTsMs > 0 && activeTimestampMs >= launchRequestTsMs)
+            ? (activeTimestampMs - launchRequestTsMs)
+            : 0;
+
+    const TerminationNature terminationNature = static_cast<TerminationNature>(m_telemetryMetricsState.lastTerminationNature.load());
+    const uint32_t cumulativeRelaunchCount = m_telemetryMetricsState.cumulativeRelaunchCount.load();
+    const bool isInitialLaunchTelemetry =
+        (cumulativeRelaunchCount == 0 && terminationNature == TerminationNature::NONE);
+
+    JsonObject telemetryPayload;
+    telemetryPayload["appId"] = m_referenceAppId;
+    telemetryPayload["launchToActiveMs"] = static_cast<uint32_t>(launchToActiveMs);
+    // Keep cold-start timing metrics only on the first successful ACTIVE transition.
+    // This avoids reusing startup/preinstall timings for later app restarts.
+    if (isInitialLaunchTelemetry) {
+        telemetryPayload["totalStartToActiveMs"] = static_cast<uint32_t>(totalStartToActiveMs);
+        telemetryPayload["preinstallDurationMs"] = static_cast<uint32_t>(preinstallDurationMs);
+    } else {
+        // For relaunches, report only restart context fields and per-launch ACTIVE timing.
+        telemetryPayload["cumulativeRelaunchCount"] = cumulativeRelaunchCount;
+        telemetryPayload["terminationNature"] = toTerminationNatureString(terminationNature);
+    }
+
+    std::string payload;
+    telemetryPayload.ToString(payload);
+    if (!payload.empty()) {
+        publishTelemetryMarker(kSceneSetHomeAppLaunchMarker, payload);
+    }
+}
+
+void SceneSetApp::publishTelemetryMarker(const std::string& marker, const std::string& payload) {
+#ifdef UNIT_TEST
+    std::lock_guard<std::mutex> lock(m_lock);
+    m_lastTelemetryMarker = marker;
+    m_lastTelemetryPayload = payload;
+#endif
+
+#if SCENESET_TELEMETRY_METRICS_SUPPORT
+    std::string markerBuffer = marker;
+    std::string payloadBuffer = payload;
+    t2_event_s(markerBuffer.data(), payloadBuffer.data());
+#else
+    (void)marker;
+    (void)payload;
+#endif
 }
 
 SceneSetApp::PreinstallManagerEventHandler::~PreinstallManagerEventHandler() {}
@@ -1492,7 +2057,7 @@ void SceneSetApp::PackageInstallerEventHandler::OnAppInstallationStatus(const st
     std::cout << "PackageManager OnAppInstallationStatus: " << jsonresponse << std::endl;
 
     SceneSetApp& instance = SceneSetApp::getInstance();
-    if (instance.m_waitingForStartupPreinstallCompletion.load()) {
+    if (instance.m_startupPreinstallState.waitingForCompletion.load()) {
         instance.recordStartupPreinstallStatus(jsonresponse);
     }
 }
