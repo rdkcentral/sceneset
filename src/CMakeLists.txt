@@ -91,6 +91,11 @@ if(DISABLE_REFERENCE_APP_UPDATE)
     message(WARNING "Reference app update will be disabled, SceneSet will not update the reference app")
 endif()
 
+set(DISABLE_PREINSTALL OFF CACHE BOOL "Disable SceneSet startup preinstallation and factory app copying")
+if(DISABLE_PREINSTALL)
+    message(WARNING "SceneSet startup preinstallation and factory app copying will be disabled")
+endif()
+
 set(ENABLE_SYSTEM_CONFIG OFF CACHE BOOL "Enable reading system config from /etc/sceneset.conf")
 set(ENABLE_CONFIG_OVERRIDE OFF CACHE BOOL "Enable optional /opt/sceneset.conf override on top of /etc/sceneset.conf")
 set(RESTART_HOMEAPP_ALWAYS OFF CACHE BOOL "Restart reference app on every TERMINATING to UNLOADED transition")
@@ -154,6 +159,7 @@ target_compile_definitions(${TARGET} PRIVATE
     DISABLE_HOMEAPP_RESTART_ON_NEW_VERSION=$<BOOL:${DISABLE_HOMEAPP_RESTART_ON_NEW_VERSION}>
     SCENESET_TELEMETRY_METRICS_SUPPORT=$<BOOL:${SCENESET_TELEMETRY_METRICS_SUPPORT}>
     DISABLE_REFERENCE_APP_UPDATE=$<BOOL:${DISABLE_REFERENCE_APP_UPDATE}>
+    DISABLE_PREINSTALL=$<BOOL:${DISABLE_PREINSTALL}>
     GIT_SHORT_SHA="${GIT_SHORT_SHA}"
 )
 

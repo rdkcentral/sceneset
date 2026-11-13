@@ -765,6 +765,25 @@ TEST_F(SceneSetTest, StartPreinstallForceInstallWithNullManagerReturnsFalse) {
     EXPECT_FALSE(result);
 }
 
+TEST_F(SceneSetTest, StartPreinstallHonorsDisableFlag) {
+    testing::NiceMock<MockPreinstallManager> manager;
+    SceneSetApp app;
+    SceneSetAppTestPeer::SetPreinstallManager(app, &manager);
+
+#if DISABLE_PREINSTALL
+    EXPECT_CALL(manager, StartPreinstall(testing::_)).Times(0);
+    EXPECT_FALSE(app.startPreinstall(false));
+    EXPECT_FALSE(app.startPreinstall(true));
+#else
+    EXPECT_CALL(manager, StartPreinstall(false)).WillOnce(testing::Return(Core::ERROR_NONE));
+    EXPECT_CALL(manager, StartPreinstall(true)).WillOnce(testing::Return(Core::ERROR_NONE));
+    EXPECT_TRUE(app.startPreinstall(false));
+    EXPECT_TRUE(app.startPreinstall(true));
+#endif
+
+    SceneSetAppTestPeer::SetPreinstallManager(app, nullptr);
+}
+
 // Test isReferenceAppInstalled returns false when reference app ID is empty
 TEST_F(SceneSetTest, IsReferenceAppInstalledWithEmptyIdReturnsFalse) {
     SceneSetApp app;

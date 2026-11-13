@@ -22,6 +22,8 @@ project(SceneSetL1Tests)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+set(DISABLE_PREINSTALL OFF CACHE BOOL "Disable SceneSet startup preinstallation and factory app copying")
+
 # Find required packages
 find_package(GTest REQUIRED)
 find_package(libralf CONFIG REQUIRED)
@@ -44,6 +46,7 @@ target_compile_definitions(${TEST_EXECUTABLE} PRIVATE
     DAC_APP_CERT_PATH="/etc/rdk/certs"
     ENABLE_SYSTEM_CONFIG=1
     ENABLE_FIRMWARE_CHANGE_DETECTION=1
+    DISABLE_PREINSTALL=$<BOOL:${DISABLE_PREINSTALL}>
 )
 
 # WPEFramework library paths
@@ -121,6 +124,7 @@ target_compile_definitions(${TEST_EXECUTABLE_RESTART_ALWAYS} PRIVATE
     ENABLE_SYSTEM_CONFIG=1
     ENABLE_FIRMWARE_CHANGE_DETECTION=1
     RESTART_HOMEAPP_ALWAYS=1
+    DISABLE_PREINSTALL=$<BOOL:${DISABLE_PREINSTALL}>
 )
 
 target_link_libraries(${TEST_EXECUTABLE_RESTART_ALWAYS}
