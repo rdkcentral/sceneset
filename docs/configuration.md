@@ -51,6 +51,7 @@ flowchart LR
 | `DISABLE_HOMEAPP_RESTART_ON_NEW_VERSION` | Bool | `OFF` | Disable auto kill/relaunch when a newer reference app version is installed while running |
 | `SCENESET_TELEMETRY_METRICS_SUPPORT` | Bool | `OFF` | Enable SceneSet T2 launch/relaunch telemetry marker emission |
 | `DISABLE_REFERENCE_APP_UPDATE` | Bool | `OFF` | Disable OTA update monitoring |
+| `DISABLE_PREINSTALL` | Bool | `OFF` | Skip startup preinstallation and factory app copying. Preserve preinstall files and firmware markers, and continue launching an already-installed reference app. OTA monitoring remains controlled by `DISABLE_REFERENCE_APP_UPDATE` |
 
 ### Build Examples
 
@@ -85,6 +86,17 @@ cmake -B build \
     -DSCENESET_DEFAULT_APPNAME="com.rdkcentral.refui" \
     -DSCENESET_TELEMETRY_METRICS_SUPPORT=ON
 ```
+
+**Build Without Startup Preinstallation:**
+```bash
+cmake -B build \
+    -DSCENESET_DEFAULT_APPNAME="com.rdkcentral.refui" \
+    -DDISABLE_PREINSTALL=ON
+```
+
+This build still requires the configured PreinstallManager interface and a valid
+preinstall directory during initialization. It does not call `StartPreinstall`
+or wait for preinstall completion during startup.
 
 ### CMake Validation Rules
 

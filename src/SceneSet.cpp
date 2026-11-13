@@ -90,6 +90,10 @@
 #define DISABLE_HOMEAPP_RESTART_ON_NEW_VERSION 0
 #endif
 
+#ifndef DISABLE_PREINSTALL
+#define DISABLE_PREINSTALL 0
+#endif
+
 #define SCENESET_CONFIG_FILE "/opt/sceneset_app.conf"
 #define SCENESET_SYSTEM_CONFIG_FILE "/etc/sceneset.conf"
 #define SCENESET_OVERRIDE_CONFIG_FILE "/opt/sceneset.conf"
@@ -607,6 +611,11 @@ bool SceneSetApp::killReferenceApp() {
 }
 
 bool SceneSetApp::startPreinstall(bool forceInstall) {
+#if DISABLE_PREINSTALL
+    (void)forceInstall;
+    std::cout << "Preinstall is disabled by DISABLE_PREINSTALL. Skipping StartPreinstall." << std::endl;
+    return false;
+#else
     if (m_preinstallManager == nullptr) {
         std::cerr << "PreinstallManager is not initialized, cannot start preinstall." << std::endl;
         return false;
@@ -619,6 +628,7 @@ bool SceneSetApp::startPreinstall(bool forceInstall) {
         return false;
     }
     return true;
+#endif
 }
 
 bool SceneSetApp::isReferenceAppInstalled() {
@@ -1133,6 +1143,7 @@ void SceneSetApp::run() {
         std::cout << "No reference app ID specified, skipping preinstall and app launch" << std::endl;
         return;
     }
+#if !DISABLE_PREINSTALL
     const bool preinstallEventsRegistered = registerForPreinstallEvents();
     if (!preinstallEventsRegistered) {
         std::cerr << "Failed to register for PreinstallManager completion events" << std::endl;
@@ -1142,12 +1153,20 @@ void SceneSetApp::run() {
     if (!packageInstallerEventsRegistered) {
         std::cerr << "Failed to register for PackageManager installation status events" << std::endl;
     }
+#endif
     
     const bool appManagerEventsRegistered = registerForAppEvents();
     if (!appManagerEventsRegistered) {
         std::cerr << "Failed to register for AppManager events" << std::endl;
     }
 
+#if DISABLE_PREINSTALL
+    std::cout << "Startup preinstall is disabled by DISABLE_PREINSTALL. Skipping factory app copy and preinstallation." << std::endl;
+    checkAndLaunchIfAlreadyInstalled();
+#if !DISABLE_REFERENCE_APP_UPDATE
+    startDownloadMonitorThread();
+#endif
+#else
     // Determine if this is a Factory Setting Reset (FSR) / first boot scenario.
 #if ENABLE_FIRMWARE_CHANGE_DETECTION
     // A first boot is triggered whenever the current firmware version differs from
@@ -1190,6 +1209,7 @@ void SceneSetApp::run() {
             std::cerr << "Preinstall started without a registered AppManager status handler" << std::endl;
         }
     }
+#endif
 
     waitForTermSignal();
 }
