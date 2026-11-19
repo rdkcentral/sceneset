@@ -74,6 +74,7 @@ public:
     std::string readLastBootFirmwareVersion() const;
     void storeCurrentFirmwareVersion();
     bool copyFactoryAppsToPreinstall();
+    void prepareFactoryAppsForFirstBoot();
     void cleanupPreinstallFolder();
     void waitForTermSignal();
     static void handleTerminationSignal(int signal);
@@ -96,6 +97,7 @@ private:
         std::mutex completionThreadMutex;
         std::atomic<bool> waitingForCompletion { false };
         std::atomic<bool> hasFailure { false };
+        std::atomic<bool> markFactoryAppsCopiedOnSuccess { false };
     };
 
     struct TelemetryMetricsState {
@@ -123,6 +125,7 @@ private:
     std::shared_ptr<WPEFramework::Exchange::IPackageInstaller::INotification> m_packageInstallerEventHandler;
     std::string m_appmgrCallsign, m_preinstallCallsign;
     std::string m_referenceAppId;
+    std::string m_defaultHomeAppIntent;
     std::string m_comrpcPath;
     std::string m_downloadDirectory;
     std::string m_preinstallDirectory;
@@ -147,6 +150,7 @@ private:
     void stopPreinstallCompletionThread();
     void completeStartupAfterPreinstall();
     void resetStartupPreinstallStatusTracking();
+    void beginStartupPreinstallStatusTracking(bool statusEventsRegistered);
     void recordStartupPreinstallStatus(const std::string& jsonresponse);
     bool isStartupPreinstallSucceed() const;
     void monitorDownloadDirectory();
