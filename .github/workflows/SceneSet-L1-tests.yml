@@ -34,7 +34,7 @@ on:
 env:
   BUILD_TYPE: Debug
   THUNDER_REF: "R4.4.3"
-  INTERFACES_REF: "develop"
+  INTERFACES_REF: "c5c10ddbb34215ddceae16653bfdd53bd86b76ae"
 
 jobs:
   SceneSet-L1-tests:
